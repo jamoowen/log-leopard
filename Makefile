@@ -1,10 +1,13 @@
-.PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake verify-release
+.PHONY: build web-build build-production dashboard-prototype dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake verify-release
 
 build:
 	go build ./cmd/log-leopard
 
 web-build:
 	pnpm --dir web run build
+
+dashboard-prototype:
+	pnpm --dir web exec vite --host 127.0.0.1
 
 build-production: web-build
 	go build -tags production -o log-leopard ./cmd/log-leopard

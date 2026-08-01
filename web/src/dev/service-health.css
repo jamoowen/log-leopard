@@ -1,0 +1,1033 @@
+.health-shell {
+  --health-blue: #75baff;
+  --health-green: #8de7a7;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 65% -40%, rgb(117 186 255 / 8%), transparent 42%),
+    var(--bg);
+}
+
+.health-topbar,
+.health-subnav,
+.health-context,
+.health-context button,
+.health-service,
+.health-panel header,
+.health-panel footer,
+.health-legend,
+.health-errors header button,
+.health-matrix-head,
+.health-matrix-footer,
+.health-timeline-title,
+.health-time-badge,
+.health-incident-status,
+.health-prototype-switcher,
+.health-drilldown {
+  display: flex;
+  align-items: center;
+}
+
+.health-topbar {
+  height: 46px;
+  flex: 0 0 46px;
+  justify-content: space-between;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.health-context {
+  gap: 7px;
+}
+
+.health-context button {
+  height: 30px;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.health-context button:first-of-type {
+  display: grid;
+  gap: 0;
+  text-align: left;
+}
+
+.health-context button span {
+  color: var(--text);
+}
+
+.health-context button small {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.health-live {
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.06em;
+}
+
+.health-live i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.health-subnav {
+  min-height: 42px;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(16 18 22 / 74%);
+}
+
+.health-subnav button {
+  height: 42px;
+  padding: 0 13px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.health-subnav button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.health-service {
+  gap: 8px;
+  color: var(--faint);
+  font-size: 9px;
+}
+
+.health-service strong {
+  margin-right: 8px;
+  color: var(--text);
+  font:
+    10px "SFMono-Regular",
+    monospace;
+}
+
+.health-summary {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.health-summary > div {
+  min-width: 0;
+  padding: 14px 16px 12px;
+  border-right: 1px solid var(--border);
+}
+
+.health-summary span,
+.health-eyebrow {
+  display: block;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.health-summary strong {
+  display: block;
+  margin: 5px 0 3px;
+  font-size: 20px;
+  font-weight: 520;
+  letter-spacing: -0.04em;
+}
+
+.health-summary strong.warning {
+  color: var(--warning);
+}
+
+.health-summary strong.revision {
+  font:
+    15px "SFMono-Regular",
+    monospace;
+}
+
+.health-summary small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-summary small.good {
+  color: var(--health-green);
+}
+
+.health-workbench,
+.health-matrix-page,
+.health-timeline-page {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.health-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(245px, 0.8fr);
+  grid-template-rows: minmax(320px, 1fr) auto;
+  gap: 1px;
+  min-height: calc(100% - 84px);
+  background: var(--border);
+}
+
+.health-panel {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.health-traffic-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.health-panel header {
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 10px 14px;
+}
+
+.health-panel h2 {
+  margin: 5px 0 0;
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.health-legend {
+  gap: 14px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+  background: var(--health-blue);
+}
+
+.health-legend .latency::before {
+  background: var(--accent);
+}
+
+.health-main-chart {
+  min-height: 220px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.health-main-chart svg {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+  flex: 1;
+}
+
+.health-gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.health-bar {
+  fill: rgb(117 186 255 / 30%);
+}
+
+.health-bar-hot {
+  fill: rgb(255 103 95 / 48%);
+}
+
+.health-latency-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.health-incident-line {
+  stroke: var(--error);
+  stroke-dasharray: 3 4;
+}
+
+.health-incident-dot {
+  fill: var(--error);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.health-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 6px 9px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.health-traffic-panel footer {
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-traffic-panel footer svg {
+  color: var(--error);
+}
+
+.health-traffic-panel footer button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 9px;
+}
+
+.health-diagnostics header strong {
+  color: var(--health-green);
+  font-size: 10px;
+}
+
+.health-diagnostics > div {
+  display: grid;
+  grid-template-columns: 18px minmax(75px, 1fr) auto 72px;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-diagnostics > div > strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.health-diagnostics > div > svg {
+  color: var(--faint);
+}
+
+.health-diagnostics p {
+  margin: 12px 14px;
+  padding: 9px;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.health-spark {
+  width: 100%;
+  height: 30px;
+  overflow: visible;
+}
+
+.health-spark polyline {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+
+.health-spark-error polyline {
+  stroke: var(--error);
+}
+
+.health-spark-warning polyline {
+  stroke: var(--warning);
+}
+
+.health-errors {
+  grid-column: 1 / -1;
+}
+
+.health-errors header button {
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-log-row {
+  display: grid;
+  grid-template-columns: 100px 40px 130px minmax(180px, 1fr) 80px;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  align-items: center;
+  font:
+    9px "SFMono-Regular",
+    monospace;
+}
+
+.health-log-row time,
+.health-log-row em {
+  color: var(--faint);
+  font-style: normal;
+}
+
+.health-log-row b {
+  color: var(--error);
+}
+
+.health-log-row span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Variant B: dense analytical matrix with a persistent interpretation pane. */
+.health-matrix-page {
+  display: flex;
+  flex-direction: column;
+  background: #0b0d10;
+}
+
+.health-matrix-head {
+  justify-content: space-between;
+  padding: 24px 28px 20px;
+}
+
+.health-matrix-head h1,
+.health-timeline-title h1 {
+  margin: 7px 0 0;
+  font-size: 24px;
+  font-weight: 520;
+  letter-spacing: -0.04em;
+}
+
+.health-matrix-head h1 small {
+  margin-left: 8px;
+  color: var(--health-green);
+  font-size: 10px;
+  font-weight: 450;
+  letter-spacing: 0;
+}
+
+.health-score {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-score strong {
+  color: var(--accent);
+  font-size: 30px;
+  font-weight: 400;
+}
+
+.health-score span {
+  width: 42px;
+  color: var(--faint);
+  font-size: 8px;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.health-matrix-layout {
+  display: grid;
+  grid-template-columns: minmax(600px, 1fr) 310px;
+  min-height: 0;
+  flex: 1;
+  margin: 0 28px 20px;
+  border: 1px solid var(--border);
+  background: var(--border);
+  gap: 1px;
+}
+
+.health-signal-table {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.health-matrix-row {
+  width: 100%;
+  min-height: 61px;
+  display: grid;
+  grid-template-columns:
+    minmax(140px, 1.25fr) minmax(150px, 1.4fr)
+    75px 75px 75px 80px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  font-size: 9px;
+}
+
+.health-matrix-row:not(.heading):hover {
+  background: var(--surface);
+}
+
+.health-matrix-row.heading {
+  min-height: 36px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  text-transform: uppercase;
+}
+
+.health-matrix-row > span:first-child {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.health-matrix-row > span:first-child i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--health-green);
+}
+
+.health-matrix-row > span:first-child i.recovering {
+  background: var(--warning);
+}
+
+.health-matrix-row strong {
+  color: var(--text);
+  font:
+    10px "SFMono-Regular",
+    monospace;
+}
+
+.health-matrix-row em {
+  justify-self: start;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--health-green) 30%, var(--border));
+  border-radius: 3px;
+  color: var(--health-green);
+  font-size: 8px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.health-matrix-row em.recovering {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+  color: var(--warning);
+}
+
+.health-matrix-inspector {
+  padding: 18px;
+  background: var(--surface);
+}
+
+.health-time-badge {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  margin: 20px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.health-time-badge svg {
+  grid-row: 1 / 3;
+  color: var(--warning);
+}
+
+.health-time-badge strong {
+  font:
+    10px "SFMono-Regular",
+    monospace;
+}
+
+.health-time-badge span {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.health-matrix-inspector h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 520;
+}
+
+.health-matrix-inspector > p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.health-matrix-inspector dl {
+  margin: 18px 0;
+  border-top: 1px solid var(--border);
+}
+
+.health-matrix-inspector dl div {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+}
+
+.health-matrix-inspector dt {
+  color: var(--faint);
+}
+
+.health-matrix-inspector dd {
+  margin: 0;
+  color: var(--text);
+  font-family: "SFMono-Regular", monospace;
+}
+
+.health-matrix-inspector > button,
+.health-incident-card > button {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.health-matrix-inspector > small {
+  display: block;
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.health-matrix-footer {
+  min-height: 38px;
+  gap: 18px;
+  padding: 0 28px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-matrix-footer span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--faint);
+}
+
+.health-matrix-footer strong {
+  color: var(--health-green);
+}
+
+/* Variant C: shared-axis incident reconstruction rather than dashboard cards. */
+.health-timeline-page {
+  padding: 22px 26px 60px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 49.9%,
+      rgb(255 255 255 / 2%) 50%,
+      transparent 50.1%
+    ),
+    var(--bg);
+}
+
+.health-timeline-title {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.health-timeline-title > div:last-child {
+  display: grid;
+  padding: 8px 12px;
+  border-left: 2px solid var(--error);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+}
+
+.health-timeline-title > div:last-child b {
+  font:
+    10px "SFMono-Regular",
+    monospace;
+}
+
+.health-timeline-title > div:last-child span {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.health-timeline-layout {
+  display: grid;
+  grid-template-columns: minmax(620px, 1fr) 280px;
+  gap: 18px;
+}
+
+.health-tracks {
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.health-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-left: 128px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.health-track {
+  width: 100%;
+  height: 66px;
+  display: grid;
+  grid-template-columns: 115px minmax(0, 1fr) 58px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.health-track:hover {
+  background: var(--surface-2);
+}
+
+.health-track > span,
+.health-log-events > span {
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.health-track > strong {
+  text-align: right;
+  font:
+    9px "SFMono-Regular",
+    monospace;
+}
+
+.health-track-plot {
+  height: 48px;
+  position: relative;
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(25% - 1px),
+    var(--border) 25%
+  );
+  overflow: hidden;
+}
+
+.health-track-plot > i:not(.health-window, .health-deploy-mark) {
+  flex: 1;
+  max-height: 44px;
+  background: rgb(117 186 255 / 32%);
+}
+
+.health-track-plot .health-spark {
+  height: 44px;
+  align-self: center;
+  z-index: 2;
+}
+
+.health-window {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 47%;
+  width: 13%;
+  border-inline: 1px solid rgb(255 103 95 / 45%);
+  background: rgb(255 103 95 / 7%);
+}
+
+.health-deploy-mark {
+  position: absolute;
+  left: 28%;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--health-blue);
+}
+
+.health-track-plot > strong {
+  position: absolute;
+  left: calc(28% + 7px);
+  top: 8px;
+  color: var(--health-blue);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.health-log-events {
+  display: grid;
+  grid-template-columns: 115px repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+}
+
+.health-log-events button {
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid var(--border-bright);
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.health-log-events b {
+  color: var(--error);
+}
+
+.health-log-events em {
+  color: var(--warning);
+  font-style: normal;
+}
+
+.health-log-events i {
+  color: var(--health-blue);
+  font-style: normal;
+}
+
+.health-incident-card {
+  align-self: start;
+  padding: 18px;
+  border: 1px solid var(--border-bright);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.health-incident-card h2 {
+  margin: 8px 0 4px;
+  font:
+    18px "SFMono-Regular",
+    monospace;
+}
+
+.health-incident-status {
+  gap: 6px;
+  margin: 0 0 18px;
+  color: var(--warning);
+  font-size: 9px;
+}
+
+.health-causal-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.health-causal-step > span {
+  color: var(--faint);
+  font:
+    9px "SFMono-Regular",
+    monospace;
+}
+
+.health-causal-step div {
+  display: grid;
+  gap: 3px;
+}
+
+.health-causal-step b {
+  font-size: 10px;
+  font-weight: 520;
+}
+
+.health-causal-step small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.health-incident-card > button {
+  margin-top: 16px;
+}
+
+.health-prototype-switcher {
+  position: fixed;
+  z-index: 100;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid #59616d;
+  border-radius: 999px;
+  background: #e9edf2;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 55%);
+  color: #12151a;
+}
+
+.health-prototype-switcher button {
+  width: 34px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.health-prototype-switcher button:hover {
+  background: #cdd3da;
+}
+
+.health-prototype-switcher span {
+  min-width: 195px;
+  text-align: center;
+  font:
+    9px "SFMono-Regular",
+    monospace;
+}
+
+.health-drilldown {
+  position: fixed;
+  z-index: 90;
+  right: 14px;
+  bottom: 14px;
+  max-width: min(390px, calc(100vw - 28px));
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.health-drilldown svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .health-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .health-summary > div:nth-child(n + 4) {
+    display: none;
+  }
+  .health-workbench-grid,
+  .health-matrix-layout,
+  .health-timeline-layout {
+    display: block;
+  }
+  .health-diagnostics,
+  .health-matrix-inspector,
+  .health-incident-card {
+    border-top: 1px solid var(--border);
+  }
+  .health-matrix-layout {
+    margin: 0 14px 60px;
+    overflow-x: auto;
+  }
+  .health-signal-table {
+    min-width: 760px;
+  }
+  .health-timeline-layout {
+    overflow-x: auto;
+  }
+  .health-tracks {
+    min-width: 720px;
+  }
+  .health-incident-card {
+    margin-top: 14px;
+  }
+}
+
+@media (max-width: 620px) {
+  .health-topbar {
+    padding-inline: 10px;
+  }
+  .health-context .health-live,
+  .health-context button:first-of-type,
+  .health-service span,
+  .health-service strong:last-child,
+  .health-log-row em {
+    display: none;
+  }
+  .health-subnav {
+    padding-inline: 6px;
+  }
+  .health-summary > div {
+    padding-inline: 10px;
+  }
+  .health-summary strong {
+    font-size: 16px;
+  }
+  .health-log-row {
+    grid-template-columns: 70px 32px minmax(90px, 1fr);
+  }
+  .health-log-row span,
+  .health-legend,
+  .health-drilldown {
+    display: none;
+  }
+  .health-matrix-head,
+  .health-timeline-title {
+    padding-inline: 14px;
+  }
+  .health-matrix-head h1,
+  .health-timeline-title h1 {
+    font-size: 19px;
+  }
+  .health-timeline-page {
+    padding-inline: 10px;
+  }
+  .health-prototype-switcher {
+    bottom: 8px;
+  }
+}

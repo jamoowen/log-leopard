@@ -8,10 +8,38 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 10_000 } },
 });
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
+const root = createRoot(document.getElementById("root")!);
+const requestedPrototype = new URLSearchParams(window.location.search).get(
+  "service-health",
 );
+const prototypeVariant = ["workbench", "matrix", "timeline"].includes(
+  requestedPrototype ?? "",
+)
+  ? requestedPrototype
+  : null;
+
+async function render() {
+  let content = <App />;
+  if (import.meta.env.DEV && prototypeVariant) {
+    const { ServiceHealthPrototype } = await import(
+      "./dev/ServiceHealthPrototype"
+    );
+    content = <ServiceHealthPrototype variant={prototypeVariant} />;
+  }
+
+  root.render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>
+    </StrictMode>,
+  );
+}
+
+render().catch(() => {
+  root.render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+});
