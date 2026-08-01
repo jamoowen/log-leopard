@@ -63,6 +63,7 @@ func (*Provider) ServiceHealth(_ context.Context, req provider.ServiceHealthRequ
 	points := min(provider.MaxHealthBuckets, int(req.End.Sub(req.Start)/req.Alignment))
 	requests := make([]provider.HealthPoint, 0, points)
 	errors5xx := make([]provider.HealthPoint, 0, points)
+	latencyP95 := make([]provider.HealthPoint, 0, points)
 	for i := 1; i <= points; i++ {
 		timestamp := req.Start.Add(time.Duration(i) * req.Alignment).UTC()
 		value := float64(28 + (i*7)%23)
@@ -72,12 +73,14 @@ func (*Provider) ServiceHealth(_ context.Context, req provider.ServiceHealthRequ
 		}
 		requests = append(requests, provider.HealthPoint{Timestamp: timestamp, Value: value})
 		errors5xx = append(errors5xx, provider.HealthPoint{Timestamp: timestamp, Value: errorValue})
+		latencyP95 = append(latencyP95, provider.HealthPoint{Timestamp: timestamp, Value: float64(95 + (i*19)%180)})
 	}
 	return provider.ServiceHealthResult{
 		Service: req.Service, Start: req.Start.UTC(), End: req.End.UTC(), Alignment: req.Alignment,
 		Series: []provider.HealthSeries{
 			{Name: provider.HealthRequestCount, Unit: "1", Points: requests},
 			{Name: provider.HealthServerErrorCount, Unit: "1", Points: errors5xx},
+			{Name: provider.HealthRequestLatencyP95, Unit: "ms", Points: latencyP95},
 		},
 	}, nil
 }

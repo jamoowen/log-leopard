@@ -104,3 +104,99 @@ test("distinguishes failed discovery from a project without targets", () => {
   expect(screen.getByText("Service discovery unavailable")).toBeVisible();
   expect(screen.queryByText("No Cloud Run services discovered")).toBeNull();
 });
+
+test("does not present a missing latency observation as zero", async () => {
+  serviceHealth.mockImplementation(async (input) => {
+    const timestamp = new Date(
+      new Date(input.start).getTime() + 60_000,
+    ).toISOString();
+    return {
+      service: input.service,
+      start: input.start,
+      end: input.end,
+      alignmentSeconds: 60,
+      series: [
+        { name: "request_count", unit: "1", points: [{ timestamp, value: 4 }] },
+        {
+          name: "server_error_count",
+          unit: "1",
+          points: [{ timestamp, value: 0 }],
+        },
+      ],
+    };
+  });
+  const user = userEvent.setup();
+  renderHealth();
+
+  await user.selectOptions(screen.getByLabelText("Health service"), "api");
+
+  expect(await screen.findByText("Unavailable")).toBeVisible();
+  expect(
+    screen.queryByRole("slider", { name: "P95 latency metric interval" }),
+  ).toBeNull();
+  expect(screen.queryByText("0ms")).toBeNull();
+});
+
+test("joins sparse samples with an explicit dashed gap", async () => {
+  serviceHealth.mockImplementation(async (input) => {
+    const start = new Date(input.start).getTime();
+    const timestamps = [1, 2, 8].map((minute) =>
+      new Date(start + minute * 60_000).toISOString(),
+    );
+    return {
+      service: input.service,
+      start: input.start,
+      end: input.end,
+      alignmentSeconds: 60,
+      series: [
+        {
+          name: "request_count",
+          unit: "1",
+          points: timestamps.map((timestamp, index) => ({
+            timestamp,
+            value: 10 + index,
+          })),
+        },
+        {
+          name: "server_error_count",
+          unit: "1",
+          points: timestamps.map((timestamp, index) => ({
+            timestamp,
+            value: index === 1 ? 1 : 0,
+          })),
+        },
+        {
+          name: "request_latency_p95",
+          unit: "ms",
+          points: timestamps.map((timestamp, index) => ({
+            timestamp,
+            value: 100 + index * 20,
+          })),
+        },
+      ],
+    };
+  });
+  const user = userEvent.setup();
+  const { container } = renderHealth();
+
+  await user.selectOptions(screen.getByLabelText("Health service"), "api");
+  await screen.findByText("REQUEST HEALTH");
+
+  expect(
+    container.querySelector(".service-health-request-line.request"),
+  ).toHaveAttribute("d", "M6.7 46.7 L20.0 27.3");
+  expect(
+    container.querySelector(".service-health-gap-line.request"),
+  ).toHaveAttribute("d", "M20.0 27.3 L100.0 8.0");
+  expect(
+    container.querySelector(".service-health-secondary-line"),
+  ).toHaveAttribute("d", "M6.7 240.0 L20.0 8.0");
+  expect(
+    container.querySelector(".service-health-scale.request"),
+  ).toHaveTextContent("12Requests0");
+  expect(
+    container.querySelector(".service-health-scale.errors"),
+  ).toHaveTextContent("15xx0");
+  expect(container.querySelector(".service-health-chart rect")).toBeNull();
+  expect(container.querySelector(".service-health-chart circle")).toBeNull();
+});

@@ -130,10 +130,18 @@ export const mockClient: ApiClient = {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const start = new Date(input.start).getTime();
     const end = new Date(input.end).getTime();
-    const alignmentSeconds = 60;
-    const count = Math.min(300, Math.floor((end - start) / 60_000));
+    const alignmentSeconds = Math.max(
+      60,
+      Math.ceil((end - start) / 300 / 60_000) * 60,
+    );
+    const count = Math.min(
+      300,
+      Math.floor((end - start) / (alignmentSeconds * 1000)),
+    );
     const requests = Array.from({ length: count }, (_, index) => ({
-      timestamp: new Date(start + (index + 1) * 60_000).toISOString(),
+      timestamp: new Date(
+        start + (index + 1) * alignmentSeconds * 1000,
+      ).toISOString(),
       value: 28 + ((index * 7) % 23),
     }));
     const serverErrors = requests.map((point, index) => ({
@@ -145,6 +153,10 @@ export const mockClient: ApiClient = {
             ? 1
             : 0,
     }));
+    const latencyP95 = requests.map((point, index) => ({
+      timestamp: point.timestamp,
+      value: 95 + ((index * 19) % 180),
+    }));
     return {
       service: input.service,
       start: input.start,
@@ -153,6 +165,7 @@ export const mockClient: ApiClient = {
       series: [
         { name: "request_count", unit: "1", points: requests },
         { name: "server_error_count", unit: "1", points: serverErrors },
+        { name: "request_latency_p95", unit: "ms", points: latencyP95 },
       ],
     };
   },

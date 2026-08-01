@@ -4,15 +4,61 @@ async function openLogs(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Logs", exact: true }).click();
 }
 
-test("service health drills into the exact log interval", async ({ page }) => {
+test("service health drills into the exact log interval", async ({
+  page,
+}, testInfo) => {
   await page.goto("/?mock=1");
   await page.getByLabel("Health service").selectOption("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByLabel("Health service")).toHaveValue("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
-  await page.locator(".service-health-chart").click();
+  const chart = page.locator("button.service-health-chart").first();
+  await expect(chart.locator(".service-health-scale.request")).toContainText(
+    "Requests",
+  );
+  await expect(chart.locator(".service-health-scale.errors")).toContainText(
+    "5xx",
+  );
+  const latencyChart = page
+    .getByRole("slider", {
+      name: "P95 latency metric interval",
+    })
+    .first();
+  await expect(latencyChart).toBeVisible();
+  await latencyChart.hover({ position: { x: 120, y: 80 } });
+  await expect(page.getByRole("tooltip")).toContainText("ms");
+  await chart.focus();
+  await chart.press("Home");
+  const firstBucket = await chart.getAttribute("aria-label");
+  await chart.press("ArrowRight");
+  await expect(chart).not.toHaveAttribute("aria-label", firstBucket!);
+  const keyboardClock = (await chart.getAttribute("aria-label"))?.match(
+    /\d{2}:\d{2}/,
+  )?.[0];
+  await chart.press("Enter");
+  await expect(page.locator(".service-health-timeline h1")).toContainText(
+    keyboardClock!,
+  );
+  await page.getByRole("button", { name: "Workbench" }).click();
+  await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
+  await chart.hover({ position: { x: 120, y: 100 } });
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("Requests");
+  await expect(tooltip).toContainText("5xx");
+  const hoveredClock = (await tooltip.locator("strong").textContent())?.slice(
+    -5,
+  );
+  if (testInfo.project.name === "mobile") {
+    await chart.tap({ position: { x: 120, y: 100 } });
+  } else {
+    await chart.click({ position: { x: 120, y: 100 } });
+  }
   await expect(page.getByText("SELECTED METRIC INTERVAL")).toBeVisible();
+  await expect(page.locator(".service-health-timeline h1")).toContainText(
+    hoveredClock!,
+  );
   await page.getByRole("button", { name: /Open interval in logs/ }).click();
   await expect(
     page.getByRole("button", { name: "Logs", exact: true }),

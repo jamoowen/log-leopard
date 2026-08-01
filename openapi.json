@@ -300,7 +300,7 @@
             "type": "string"
           },
           "value": {
-            "description": "Observed count during the aligned interval.",
+            "description": "Observed metric value during the aligned interval, in the series unit.",
             "format": "double",
             "type": "number"
           }
@@ -318,7 +318,8 @@
             "description": "Fixed semantic metric series.",
             "enum": [
               "request_count",
-              "server_error_count"
+              "server_error_count",
+              "request_latency_p95"
             ],
             "type": "string"
           },
@@ -333,9 +334,10 @@
             ]
           },
           "unit": {
-            "description": "UCUM metric unit; 1 denotes a count.",
+            "description": "UCUM metric unit; 1 denotes a count and ms denotes milliseconds.",
             "enum": [
-              "1"
+              "1",
+              "ms"
             ],
             "type": "string"
           }
@@ -737,11 +739,11 @@
             "type": "string"
           },
           "series": {
-            "description": "Fixed request and server-error count series.",
+            "description": "Fixed request count, server-error count, and p95 request-latency series.",
             "items": {
               "$ref": "#/components/schemas/HealthSeries"
             },
-            "maxItems": 2,
+            "maxItems": 3,
             "type": [
               "array",
               "null"
@@ -1132,7 +1134,7 @@
     },
     "/api/v1/service-health": {
       "post": {
-        "description": "Return bounded request and server-error counts for one Cloud Run service using a fixed read-only Cloud Monitoring query. Metrics can be delayed by approximately two minutes.",
+        "description": "Return bounded request counts, server-error counts, and merged p95 request latency for one Cloud Run service using fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.",
         "operationId": "service-health",
         "requestBody": {
           "content": {

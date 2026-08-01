@@ -49,7 +49,7 @@ func TestServiceHealthIsDeterministicAndBounded(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("fake health result is not deterministic")
 	}
-	if len(first.Series) != 2 || first.Series[0].Name != provider.HealthRequestCount || first.Series[1].Name != provider.HealthServerErrorCount {
+	if len(first.Series) != 3 || first.Series[0].Name != provider.HealthRequestCount || first.Series[1].Name != provider.HealthServerErrorCount || first.Series[2].Name != provider.HealthRequestLatencyP95 {
 		t.Fatalf("unexpected series: %#v", first.Series)
 	}
 	for _, series := range first.Series {

@@ -193,15 +193,74 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  padding: 0 16px 8px;
+  padding: 0 52px 8px;
   border: 0;
   background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+button.service-health-chart,
+.service-health-chart[role="slider"] {
+  cursor: crosshair;
+}
+
+.service-health-chart-plot {
+  position: relative;
+  min-height: 180px;
+  display: flex;
+  flex: 1;
 }
 
 .service-health-chart svg {
-  min-height: 180px;
+  min-height: inherit;
   width: 100%;
   flex: 1;
+}
+
+.service-health-scale {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  bottom: 2px;
+  left: -43px;
+  width: 38px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  color: var(--accent);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  pointer-events: none;
+}
+
+.service-health-scale.errors {
+  right: -43px;
+  left: auto;
+  color: var(--error);
+  text-align: right;
+}
+
+.service-health-scale.latency {
+  color: var(--warning);
+}
+
+.service-health-scale strong {
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.service-health-scale small {
+  margin-top: 2px;
+  color: currentcolor;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.service-health-scale > span {
+  align-self: end;
+  color: var(--faint);
 }
 
 .service-health-gridline {
@@ -209,23 +268,159 @@
   stroke-width: 1;
 }
 
-.service-health-request-line {
+.service-health-request-line.request {
   stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.service-health-error-bar {
-  fill: rgb(255 103 95 / 48%);
+.service-health-request-line.error {
+  stroke: var(--error);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-request-line.latency {
+  stroke: var(--warning);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-secondary-line {
+  stroke: var(--error);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-gap-line {
+  stroke-width: 1.4;
+  stroke-dasharray: 4 4;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-gap-line.request {
+  stroke: var(--accent);
+}
+
+.service-health-gap-line.error {
+  stroke: var(--error);
+}
+
+.service-health-gap-line.latency {
+  stroke: var(--warning);
+}
+
+.service-health-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-marker {
+  fill: var(--bg);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-marker.request {
+  stroke: var(--accent);
+}
+
+.service-health-marker.error {
+  stroke: var(--error);
+}
+
+.service-health-marker.latency {
+  stroke: var(--warning);
+}
+
+.service-health-tooltip {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  min-width: 150px;
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 24%);
+  color: var(--muted);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.service-health-tooltip.start {
+  transform: none;
+}
+
+.service-health-tooltip.end {
+  transform: translateX(-100%);
+}
+
+.service-health-tooltip > strong {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.service-health-tooltip > span {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.service-health-tooltip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.service-health-tooltip i.error {
+  background: var(--error);
+}
+
+.service-health-tooltip i.latency {
+  background: var(--warning);
+}
+
+.service-health-tooltip b {
+  color: var(--text);
+  font-weight: 650;
 }
 
 .service-health-axis {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 20px;
+  flex: 0 0 20px;
   color: var(--faint);
   font:
     8px "SFMono-Regular",
     monospace;
+}
+
+.service-health-axis > span {
+  position: absolute;
+  top: 5px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.service-health-axis > span.start {
+  transform: none;
+}
+
+.service-health-axis > span.end {
+  transform: translateX(-100%);
 }
 
 .service-health-workbench article > footer {
@@ -236,6 +431,39 @@
   background: color-mix(in srgb, var(--error) 5%, transparent);
   color: var(--muted);
   font-size: 9px;
+}
+
+.service-health-latency-track {
+  border-top: 1px solid var(--border);
+}
+
+.service-health-latency-track > div:first-child {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.service-health-latency-track > div:first-child strong {
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.service-health-latency-track .service-health-chart {
+  min-height: 170px;
+  height: 170px;
+  flex: none;
+}
+
+.service-health-latency-track .service-health-chart-plot {
+  min-height: 135px;
 }
 
 .service-health-workbench article > footer svg {
@@ -463,6 +691,23 @@
   }
   .service-health-window svg {
     display: none;
+  }
+  .service-health-chart {
+    padding-inline: 38px;
+  }
+  .service-health-scale {
+    left: -32px;
+    width: 28px;
+  }
+  .service-health-scale.errors {
+    right: -32px;
+  }
+  .service-health-axis
+    > span:not(:first-child):not(:last-child):nth-child(even) {
+    display: none;
+  }
+  .service-health-tooltip {
+    min-width: 132px;
   }
   .service-health-summary {
     grid-template-columns: repeat(3, 1fr);

@@ -39,6 +39,27 @@ func TestRequestCountQueryIsFixedAndBounded(t *testing.T) {
 	}
 }
 
+func TestRequestLatencyP95QueryMergesDistributionsBeforePercentile(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	req := provider.ServiceHealthRequest{
+		ProjectID: "synthetic-project-123", Service: "checkout-api", Start: start, End: start.Add(time.Hour), Alignment: time.Minute,
+	}
+	got := requestLatencyP95Query(req)
+	for _, want := range []string{`metric.type = "run.googleapis.com/request_latencies"`, `resource.labels.project_id = "synthetic-project-123"`, `resource.labels.service_name = "checkout-api"`} {
+		if !strings.Contains(got.GetFilter(), want) {
+			t.Errorf("filter %q is missing %q", got.GetFilter(), want)
+		}
+	}
+	primary := got.GetAggregation()
+	if primary.GetPerSeriesAligner() != monitoringpb.Aggregation_ALIGN_SUM || primary.GetCrossSeriesReducer() != monitoringpb.Aggregation_REDUCE_SUM || len(primary.GetGroupByFields()) != 0 {
+		t.Fatalf("latency distributions are not merged before percentile conversion: %#v", primary)
+	}
+	secondary := got.GetSecondaryAggregation()
+	if secondary.GetPerSeriesAligner() != monitoringpb.Aggregation_ALIGN_PERCENTILE_95 || secondary.GetCrossSeriesReducer() != monitoringpb.Aggregation_REDUCE_NONE {
+		t.Fatalf("unexpected latency percentile aggregation: %#v", secondary)
+	}
+}
+
 func TestServiceHealthRejectsInvalidRequestsBeforeProviderCall(t *testing.T) {
 	called := false
 	p := &Provider{serviceHealth: func(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error) {
@@ -103,6 +124,41 @@ func TestNormalizeRequestCountsRejectsUnexpectedValues(t *testing.T) {
 			Value:    &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_StringValue{StringValue: "sensitive"}},
 		}},
 	}})
+	if !errors.Is(err, provider.ErrInvalidQuery) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestNormalizeLatencyP95OrdersReducedPoints(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	point := func(end time.Time, value float64) *monitoringpb.Point {
+		return &monitoringpb.Point{
+			Interval: &monitoringpb.TimeInterval{EndTime: timestamppb.New(end)},
+			Value:    &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_DoubleValue{DoubleValue: value}},
+		}
+	}
+	result, err := normalizeLatencyP95(provider.ServiceHealthRequest{
+		Start: start, End: start.Add(3 * time.Minute), Alignment: time.Minute,
+	}, []*monitoringpb.TimeSeries{{Points: []*monitoringpb.Point{
+		point(start.Add(2*time.Minute), 240), point(start.Add(time.Minute), 120),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Name != provider.HealthRequestLatencyP95 || result.Unit != "ms" || len(result.Points) != 2 || result.Points[0].Value != 120 || result.Points[1].Value != 240 {
+		t.Fatalf("unexpected latency series: %#v", result)
+	}
+}
+
+func TestNormalizeLatencyP95RejectsUnreducedDuplicates(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	point := &monitoringpb.Point{
+		Interval: &monitoringpb.TimeInterval{EndTime: timestamppb.New(start.Add(time.Minute))},
+		Value:    &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_DoubleValue{DoubleValue: 120}},
+	}
+	_, err := normalizeLatencyP95(provider.ServiceHealthRequest{
+		Start: start, End: start.Add(time.Hour), Alignment: time.Minute,
+	}, []*monitoringpb.TimeSeries{{Points: []*monitoringpb.Point{point}}, {Points: []*monitoringpb.Point{point}}})
 	if !errors.Is(err, provider.ErrInvalidQuery) {
 		t.Fatalf("error = %v", err)
 	}

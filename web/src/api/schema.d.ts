@@ -123,7 +123,7 @@ export interface paths {
         put?: never;
         /**
          * Get Cloud Run service health
-         * @description Return bounded request and server-error counts for one Cloud Run service using a fixed read-only Cloud Monitoring query. Metrics can be delayed by approximately two minutes.
+         * @description Return bounded request counts, server-error counts, and merged p95 request latency for one Cloud Run service using fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.
          */
         post: operations["service-health"];
         delete?: never;
@@ -349,7 +349,7 @@ export interface components {
             timestamp: string;
             /**
              * Format: double
-             * @description Observed count during the aligned interval.
+             * @description Observed metric value during the aligned interval, in the series unit.
              */
             value: number;
         };
@@ -358,14 +358,14 @@ export interface components {
              * @description Fixed semantic metric series.
              * @enum {string}
              */
-            name: "request_count" | "server_error_count";
+            name: "request_count" | "server_error_count" | "request_latency_p95";
             /** @description Observed points in ascending timestamp order; absent intervals are not fabricated. */
             points: components["schemas"]["HealthPoint"][] | null;
             /**
-             * @description UCUM metric unit; 1 denotes a count.
+             * @description UCUM metric unit; 1 denotes a count and ms denotes milliseconds.
              * @enum {string}
              */
-            unit: "1";
+            unit: "1" | "ms";
         };
         MessageOutputBody: {
             /**
@@ -547,7 +547,7 @@ export interface components {
              * @description Exclusive absolute end timestamp.
              */
             end: string;
-            /** @description Fixed request and server-error count series. */
+            /** @description Fixed request count, server-error count, and p95 request-latency series. */
             series: components["schemas"]["HealthSeries"][] | null;
             /** @description Requested Cloud Run service name. */
             service: string;

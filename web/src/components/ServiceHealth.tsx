@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -52,9 +52,16 @@ function metricWindow(preset: HealthWindow) {
 
 function series(
   data: ServiceHealthResponse | undefined,
-  name: "request_count" | "server_error_count",
+  name: "request_count" | "server_error_count" | "request_latency_p95",
 ): HealthPoint[] {
   return data?.series?.find((item) => item.name === name)?.points ?? [];
+}
+
+function formatMetricValue(value: number, unit: "count" | "ms") {
+  if (unit === "count") return formatCount(value);
+  return value >= 1_000
+    ? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 2)}s`
+    : `${value.toFixed(value >= 100 ? 0 : 1)}ms`;
 }
 
 function formatCount(value: number) {
@@ -71,82 +78,356 @@ function formatClock(timestamp: string) {
   }).format(new Date(timestamp));
 }
 
-function requestPath(values: HealthPoint[], width: number, height: number) {
-  if (!values.length) return "";
+function formatMetricTimestamp(timestamp: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+const chartWidth = 800;
+const chartHeight = 240;
+
+function pointX(
+  timestamp: string,
+  domainStart: number,
+  domainEnd: number,
+  bucketMilliseconds: number,
+) {
+  const bucketCenter = new Date(timestamp).getTime() - bucketMilliseconds / 2;
+  const ratio =
+    (bucketCenter - domainStart) / Math.max(domainEnd - domainStart, 1);
+  return Math.min(Math.max(ratio, 0), 1) * chartWidth;
+}
+
+function pointY(value: number, max: number) {
+  return chartHeight - (value / max) * (chartHeight - 8);
+}
+
+function linePaths(
+  values: HealthPoint[],
+  domainStart: number,
+  domainEnd: number,
+  bucketMilliseconds: number,
+) {
+  if (!values.length) return { solid: "", gaps: "" };
   const max = Math.max(...values.map((point) => point.value), 1);
-  return values
-    .map((point, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * width;
-      const y = height - (point.value / max) * (height - 8);
-      return `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
+  const coordinates = values.map((point) => ({
+    timestamp: new Date(point.timestamp).getTime(),
+    x: pointX(point.timestamp, domainStart, domainEnd, bucketMilliseconds),
+    y: pointY(point.value, max),
+  }));
+  if (coordinates.length === 1) {
+    const point = coordinates[0]!;
+    return {
+      solid: `M${(point.x - 3).toFixed(1)} ${point.y.toFixed(1)} L${(point.x + 3).toFixed(1)} ${point.y.toFixed(1)}`,
+      gaps: "",
+    };
+  }
+  const solid: string[] = [];
+  const gaps: string[] = [];
+  for (let index = 1; index < coordinates.length; index++) {
+    const previous = coordinates[index - 1]!;
+    const current = coordinates[index]!;
+    const segment = `M${previous.x.toFixed(1)} ${previous.y.toFixed(1)} L${current.x.toFixed(1)} ${current.y.toFixed(1)}`;
+    (current.timestamp - previous.timestamp > bucketMilliseconds * 1.5
+      ? gaps
+      : solid
+    ).push(segment);
+  }
+  return { solid: solid.join(" "), gaps: gaps.join(" ") };
+}
+
+function timeTicks(start: number, end: number) {
+  return Array.from({ length: 5 }, (_, index) => ({
+    index,
+    timestamp: new Date(start + (index / 4) * (end - start)).toISOString(),
+  }));
 }
 
 function Chart({
   requests,
   errors,
+  start,
+  end,
+  alignmentSeconds,
   onSelect,
+  selectionFallback,
+  showErrors = true,
+  primaryLabel = "Requests",
+  primaryTone = "request",
+  valueUnit = "count",
 }: {
   requests: HealthPoint[];
   errors: HealthPoint[];
-  onSelect?: () => void;
+  start: string;
+  end: string;
+  alignmentSeconds: number;
+  onSelect?: (timestamp: string) => void;
+  selectionFallback?: string;
+  showErrors?: boolean;
+  primaryLabel?: string;
+  primaryTone?: "request" | "error" | "latency";
+  valueUnit?: "count" | "ms";
 }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [keyboardIndex, setKeyboardIndex] = useState<number | null>(null);
+  const [focused, setFocused] = useState(false);
+  const domainStart = new Date(start).getTime();
+  const domainEnd = new Date(end).getTime();
+  const domainDuration = Math.max(domainEnd - domainStart, 1);
+  const bucketMilliseconds = alignmentSeconds * 1000;
+  const maxRequests = Math.max(...requests.map((point) => point.value), 1);
   const maxErrors = Math.max(...errors.map((point) => point.value), 1);
+  const requestLines = linePaths(
+    requests,
+    domainStart,
+    domainEnd,
+    bucketMilliseconds,
+  );
+  const errorLines = linePaths(
+    errors,
+    domainStart,
+    domainEnd,
+    bucketMilliseconds,
+  );
+  const fallbackIndex = Math.max(
+    requests.findIndex((point) => point.timestamp === selectionFallback),
+    0,
+  );
+  const activeIndex = hoveredIndex ?? keyboardIndex ?? fallbackIndex;
+  const inspecting = hoveredIndex !== null || focused;
+  const activeRequest = requests[activeIndex];
+  const activeError = activeRequest
+    ? errors.find((point) => point.timestamp === activeRequest.timestamp)
+    : undefined;
+  const activeX = activeRequest
+    ? pointX(
+        activeRequest.timestamp,
+        domainStart,
+        domainEnd,
+        bucketMilliseconds,
+      )
+    : 0;
+  function nearestIndex(clientX: number, element: HTMLElement) {
+    const plot = element.querySelector<HTMLElement>(
+      ".service-health-chart-plot",
+    );
+    const bounds = plot?.getBoundingClientRect();
+    if (!bounds) return activeIndex;
+    const plotWidth = Math.max(bounds.width, 1);
+    const offset = Math.min(Math.max(clientX - bounds.left, 0), plotWidth);
+    const pointerTime = domainStart + (offset / plotWidth) * domainDuration;
+    let candidateIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    requests.forEach((point, index) => {
+      const center =
+        new Date(point.timestamp).getTime() - bucketMilliseconds / 2;
+      const distance = Math.abs(center - pointerTime);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        candidateIndex = index;
+      }
+    });
+    return candidateIndex;
+  }
+  function updateHovered(event: MouseEvent<HTMLElement>) {
+    setHoveredIndex(nearestIndex(event.clientX, event.currentTarget));
+  }
+  function navigate(event: KeyboardEvent<HTMLElement>) {
+    let next = activeIndex;
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        next = Math.max(activeIndex - 1, 0);
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+        next = Math.min(activeIndex + 1, requests.length - 1);
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = requests.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setFocused(true);
+    setHoveredIndex(null);
+    setKeyboardIndex(next);
+  }
   const content = (
     <>
-      <svg viewBox="0 0 800 260" preserveAspectRatio="none">
-        {[1, 2, 3, 4].map((line) => (
-          <line
-            key={line}
-            x1="0"
-            x2="800"
-            y1={line * 52}
-            y2={line * 52}
-            className="service-health-gridline"
-          />
-        ))}
-        {errors.map((point, index) => {
-          const width = 800 / Math.max(errors.length, 1);
-          const height = (point.value / maxErrors) * 100;
-          return (
-            <rect
-              key={point.timestamp}
-              x={index * width}
-              y={252 - height}
-              width={Math.max(width - 1, 1)}
-              height={height}
-              className={point.value ? "service-health-error-bar" : ""}
-            />
-          );
-        })}
-        <path
-          d={requestPath(requests, 800, 245)}
-          className="service-health-request-line"
-          fill="none"
-        />
-      </svg>
-      <span className="service-health-axis">
-        <span>{requests[0] ? formatClock(requests[0].timestamp) : "—"}</span>
-        <span>
-          {requests.at(-1) ? formatClock(requests.at(-1)!.timestamp) : "—"}
+      <div className="service-health-chart-plot">
+        <span
+          className={`service-health-scale ${primaryTone}`}
+          aria-hidden="true"
+        >
+          <strong>{formatMetricValue(maxRequests, valueUnit)}</strong>
+          <small>{primaryLabel}</small>
+          <span>0</span>
         </span>
+        {showErrors && (
+          <span className="service-health-scale errors" aria-hidden="true">
+            <strong>{formatCount(maxErrors)}</strong>
+            <small>5xx</small>
+            <span>0</span>
+          </span>
+        )}
+        <svg
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          preserveAspectRatio="none"
+        >
+          {[1, 2, 3, 4].map((line) => (
+            <line
+              key={line}
+              x1="0"
+              x2={chartWidth}
+              y1={line * (chartHeight / 5)}
+              y2={line * (chartHeight / 5)}
+              className="service-health-gridline"
+            />
+          ))}
+          {showErrors && (
+            <>
+              <path
+                d={errorLines.gaps}
+                className="service-health-gap-line error"
+                fill="none"
+              />
+              <path
+                d={errorLines.solid}
+                className="service-health-secondary-line"
+                fill="none"
+              />
+            </>
+          )}
+          <path
+            d={requestLines.gaps}
+            className={`service-health-gap-line ${primaryTone}`}
+            fill="none"
+          />
+          <path
+            d={requestLines.solid}
+            className={`service-health-request-line ${primaryTone}`}
+            fill="none"
+          />
+          {inspecting && activeRequest && (
+            <>
+              <line
+                x1={activeX}
+                x2={activeX}
+                y1="0"
+                y2={chartHeight}
+                className="service-health-crosshair"
+              />
+              <circle
+                cx={activeX}
+                cy={pointY(activeRequest.value, maxRequests)}
+                r="4"
+                className={`service-health-marker ${primaryTone}`}
+              />
+              {showErrors && activeError && (
+                <circle
+                  cx={activeX}
+                  cy={pointY(activeError.value, maxErrors)}
+                  r="4"
+                  className="service-health-marker error"
+                />
+              )}
+            </>
+          )}
+        </svg>
+        {inspecting && activeRequest && (
+          <span
+            className={`service-health-tooltip ${activeX / chartWidth < 0.15 ? "start" : activeX / chartWidth > 0.85 ? "end" : ""}`}
+            role="tooltip"
+            style={{ left: `${(activeX / chartWidth) * 100}%` }}
+          >
+            <strong>
+              Bucket ending {formatMetricTimestamp(activeRequest.timestamp)}
+            </strong>
+            <span>
+              <i className={primaryTone} /> {primaryLabel}
+              <b>{formatMetricValue(activeRequest.value, valueUnit)}</b>
+            </span>
+            {showErrors && (
+              <span>
+                <i className="error" /> 5xx
+                <b>{formatCount(activeError?.value ?? 0)}</b>
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+      <span className="service-health-axis">
+        {timeTicks(domainStart, domainEnd).map(({ index, timestamp }) => (
+          <span
+            key={timestamp}
+            className={index === 0 ? "start" : index === 4 ? "end" : ""}
+            style={{ left: `${(index / 4) * 100}%` }}
+          >
+            {formatMetricTimestamp(timestamp)}
+          </span>
+        ))}
       </span>
     </>
   );
-  return onSelect ? (
+  const valueText = activeRequest
+    ? `Bucket ending ${formatMetricTimestamp(activeRequest.timestamp)}. ${primaryLabel}: ${formatMetricValue(activeRequest.value, valueUnit)}${showErrors ? `, 5xx: ${formatCount(activeError?.value ?? 0)}` : ""}`
+    : "No metric points";
+  const leave = () => setHoveredIndex(null);
+  const blur = () => {
+    setFocused(false);
+    setKeyboardIndex(null);
+  };
+  if (!onSelect) {
+    return (
+      <div
+        className="service-health-chart"
+        role="slider"
+        tabIndex={0}
+        aria-label={`${primaryLabel} metric interval`}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(requests.length - 1, 0)}
+        aria-valuenow={activeIndex}
+        aria-valuetext={valueText}
+        onMouseMove={updateHovered}
+        onMouseLeave={leave}
+        onFocus={() => setFocused(true)}
+        onBlur={blur}
+        onKeyDown={navigate}
+      >
+        {content}
+      </div>
+    );
+  }
+  return (
     <button
       className="service-health-chart"
       type="button"
-      onClick={onSelect}
-      aria-label="Open the highest-error interval in the incident timeline"
+      onMouseMove={updateHovered}
+      onMouseLeave={leave}
+      onFocus={() => setFocused(true)}
+      onBlur={blur}
+      onKeyDown={navigate}
+      onClick={(event) => {
+        const index = event.detail
+          ? nearestIndex(event.clientX, event.currentTarget)
+          : activeIndex;
+        const point = requests[index];
+        if (point) onSelect(point.timestamp);
+      }}
+      aria-label={`Open metric interval. ${valueText}`}
     >
       {content}
     </button>
-  ) : (
-    <div className="service-health-chart" role="img" aria-label="Metric series">
-      {content}
-    </div>
   );
 }
 
@@ -164,6 +445,7 @@ export function ServiceHealth({
   const [windowPreset, setWindowPreset] = useState(initial.window);
   const [window, setWindow] = useState(() => metricWindow(initial.window));
   const [view, setView] = useState<"workbench" | "timeline">("workbench");
+  const [selectedIntervalEnd, setSelectedIntervalEnd] = useState("");
   const available = sources.filter((source) => source.id.trim());
   const service = available.some((source) => source.id === selectedService)
     ? selectedService
@@ -172,12 +454,14 @@ export function ServiceHealth({
     setSelectedService(target);
     setWindow(metricWindow(windowPreset));
     setView("workbench");
+    setSelectedIntervalEnd("");
     saveHealthPreferences(profile!.id, { target, window: windowPreset });
   }
   function selectWindow(preset: HealthWindow) {
     setWindowPreset(preset);
     setWindow(metricWindow(preset));
     setView("workbench");
+    setSelectedIntervalEnd("");
     saveHealthPreferences(profile!.id, { target: service, window: preset });
   }
   const health = useQuery({
@@ -196,19 +480,32 @@ export function ServiceHealth({
   });
   const requests = series(health.data, "request_count");
   const errors = series(health.data, "server_error_count");
+  const latencyP95 = series(health.data, "request_latency_p95");
   const totalRequests = requests.reduce((sum, point) => sum + point.value, 0);
   const totalErrors = errors.reduce((sum, point) => sum + point.value, 0);
+  const peakLatencyP95 = latencyP95.length
+    ? Math.max(...latencyP95.map((point) => point.value))
+    : undefined;
   const errorRate = totalRequests ? (totalErrors / totalRequests) * 100 : 0;
   const highestError = errors.reduce<HealthPoint | undefined>(
     (highest, point) =>
       !highest || point.value > highest.value ? point : highest,
     undefined,
   );
-  const anomalyEnd = highestError?.timestamp ?? window.end;
-  const anomalyStart = new Date(
-    new Date(anomalyEnd).getTime() -
+  const intervalEnd = requests.some(
+    (point) => point.timestamp === selectedIntervalEnd,
+  )
+    ? selectedIntervalEnd
+    : (highestError?.timestamp ?? window.end);
+  const intervalStart = new Date(
+    new Date(intervalEnd).getTime() -
       (health.data?.alignmentSeconds ?? 60) * 1000,
   ).toISOString();
+  const intervalError =
+    errors.find((point) => point.timestamp === intervalEnd)?.value ?? 0;
+  const intervalLatencyP95 = latencyP95.find(
+    (point) => point.timestamp === intervalEnd,
+  )?.value;
 
   if (!profile) {
     return (
@@ -354,8 +651,12 @@ export function ServiceHealth({
               </strong>
             </div>
             <div>
-              <span>BUCKET WIDTH</span>
-              <strong>{health.data.alignmentSeconds}s</strong>
+              <span>PEAK P95 LATENCY</span>
+              <strong>
+                {peakLatencyP95 === undefined
+                  ? "Unavailable"
+                  : formatMetricValue(peakLatencyP95, "ms")}
+              </strong>
             </div>
           </section>
           <section className="service-health-workbench">
@@ -373,19 +674,53 @@ export function ServiceHealth({
               <Chart
                 requests={requests}
                 errors={errors}
+                start={health.data.start}
+                end={health.data.end}
+                alignmentSeconds={health.data.alignmentSeconds}
                 {...(totalErrors
-                  ? { onSelect: () => setView("timeline") }
+                  ? {
+                      selectionFallback: highestError!.timestamp,
+                      onSelect: (timestamp: string) => {
+                        setSelectedIntervalEnd(timestamp);
+                        setView("timeline");
+                      },
+                    }
                   : {})}
               />
+              {latencyP95.length > 0 && (
+                <div className="service-health-latency-track">
+                  <div>
+                    <span>REQUEST LATENCY</span>
+                    <strong>P95 container time</strong>
+                  </div>
+                  <Chart
+                    requests={latencyP95}
+                    errors={[]}
+                    start={health.data.start}
+                    end={health.data.end}
+                    alignmentSeconds={health.data.alignmentSeconds}
+                    showErrors={false}
+                    primaryLabel="P95 latency"
+                    primaryTone="latency"
+                    valueUnit="ms"
+                  />
+                </div>
+              )}
               <footer>
                 <AlertTriangle size={14} />
                 <span>
                   {totalErrors
-                    ? `Highest observed error bucket: ${highestError?.value ?? 0} 5xx responses at ${formatClock(anomalyEnd)}.`
+                    ? `Highest observed error bucket: ${highestError?.value ?? 0} 5xx responses at ${formatClock(highestError!.timestamp)}.`
                     : "No 5xx responses were observed in this window."}
                 </span>
                 {totalErrors > 0 && (
-                  <button type="button" onClick={() => setView("timeline")}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedIntervalEnd(highestError!.timestamp);
+                      setView("timeline");
+                    }}
+                  >
                     Inspect timeline
                   </button>
                 )}
@@ -415,8 +750,9 @@ export function ServiceHealth({
               <small>
                 Target and window preferences are stored in this browser. Metric
                 data is not persisted. <br />
-                Latency and resource percentiles are intentionally deferred
-                until distributions can be merged correctly.
+                P95 latency merges request distributions across revisions before
+                percentile conversion. CPU, memory, and instance metrics remain
+                intentionally deferred.
               </small>
             </aside>
           </section>
@@ -430,7 +766,7 @@ export function ServiceHealth({
             <div>
               <span>SELECTED METRIC INTERVAL</span>
               <h1>
-                {formatClock(anomalyStart)}–{formatClock(anomalyEnd)}
+                {formatClock(intervalStart)}–{formatClock(intervalEnd)}
               </h1>
             </div>
           </header>
@@ -439,24 +775,58 @@ export function ServiceHealth({
               <span>REQUEST COUNT</span>
               <Chart
                 requests={requests}
-                errors={errors.map((point) => ({ ...point, value: 0 }))}
+                errors={[]}
+                start={health.data.start}
+                end={health.data.end}
+                alignmentSeconds={health.data.alignmentSeconds}
+                showErrors={false}
               />
             </div>
             <div>
               <span>SERVER ERRORS</span>
-              <Chart requests={errors} errors={errors} />
+              <Chart
+                requests={errors}
+                errors={[]}
+                start={health.data.start}
+                end={health.data.end}
+                alignmentSeconds={health.data.alignmentSeconds}
+                showErrors={false}
+                primaryLabel="5xx"
+                primaryTone="error"
+              />
             </div>
+            {latencyP95.length > 0 && (
+              <div>
+                <span>P95 REQUEST LATENCY</span>
+                <Chart
+                  requests={latencyP95}
+                  errors={[]}
+                  start={health.data.start}
+                  end={health.data.end}
+                  alignmentSeconds={health.data.alignmentSeconds}
+                  showErrors={false}
+                  primaryLabel="P95 latency"
+                  primaryTone="latency"
+                  valueUnit="ms"
+                />
+              </div>
+            )}
           </div>
           <aside>
             <Clock3 size={16} />
-            <h2>{highestError?.value ?? 0} observed 5xx responses</h2>
+            <h2>
+              {intervalError} observed 5xx ·{" "}
+              {intervalLatencyP95 === undefined
+                ? "p95 unavailable"
+                : `${formatMetricValue(intervalLatencyP95, "ms")} p95`}
+            </h2>
             <p>
               Open the exact service and aligned interval in Logs to inspect
               request entries that reached the container.
             </p>
             <button
               type="button"
-              onClick={() => onOpenLogs(service, anomalyStart, anomalyEnd)}
+              onClick={() => onOpenLogs(service, intervalStart, intervalEnd)}
             >
               <Search size={14} /> Open interval in logs
             </button>

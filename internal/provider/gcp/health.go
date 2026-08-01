@@ -44,7 +44,27 @@ func queryServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) 
 	}
 	defer func() { _ = client.Close() }()
 
-	it := client.ListTimeSeries(ctx, requestCountQuery(req))
+	requestSeries, points, err := collectTimeSeries(client.ListTimeSeries(ctx, requestCountQuery(req)), maxRawHealthPoints)
+	if err != nil {
+		return provider.ServiceHealthResult{}, fmt.Errorf("list request-count time series: %w", classifyError(err))
+	}
+	latencySeries, _, err := collectTimeSeries(client.ListTimeSeries(ctx, requestLatencyP95Query(req)), maxRawHealthPoints-points)
+	if err != nil {
+		return provider.ServiceHealthResult{}, fmt.Errorf("list request-latency time series: %w", classifyError(err))
+	}
+	result, err := normalizeRequestCounts(req, requestSeries)
+	if err != nil {
+		return provider.ServiceHealthResult{}, err
+	}
+	latency, err := normalizeLatencyP95(req, latencySeries)
+	if err != nil {
+		return provider.ServiceHealthResult{}, err
+	}
+	result.Series = append(result.Series, latency)
+	return result, nil
+}
+
+func collectTimeSeries(it *monitoring.TimeSeriesIterator, limit int) ([]*monitoringpb.TimeSeries, int, error) {
 	series := []*monitoringpb.TimeSeries{}
 	points := 0
 	for {
@@ -53,15 +73,34 @@ func queryServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) 
 			break
 		}
 		if err != nil {
-			return provider.ServiceHealthResult{}, fmt.Errorf("list monitoring time series: %w", classifyError(err))
+			return nil, points, err
 		}
 		points += len(item.GetPoints())
-		if points > maxRawHealthPoints {
-			return provider.ServiceHealthResult{}, provider.ErrResponseTooLarge
+		if points > limit {
+			return nil, points, provider.ErrResponseTooLarge
 		}
 		series = append(series, item)
 	}
-	return normalizeRequestCounts(req, series)
+	return series, points, nil
+}
+
+func requestLatencyP95Query(req provider.ServiceHealthRequest) *monitoringpb.ListTimeSeriesRequest {
+	return &monitoringpb.ListTimeSeriesRequest{
+		Name:     "projects/" + req.ProjectID,
+		Filter:   `metric.type = "run.googleapis.com/request_latencies" AND resource.type = "cloud_run_revision" AND resource.labels.project_id = "` + req.ProjectID + `" AND resource.labels.service_name = "` + req.Service + `"`,
+		Interval: &monitoringpb.TimeInterval{StartTime: timestamppb.New(req.Start), EndTime: timestamppb.New(req.End)},
+		Aggregation: &monitoringpb.Aggregation{
+			AlignmentPeriod:    durationpb.New(req.Alignment),
+			PerSeriesAligner:   monitoringpb.Aggregation_ALIGN_SUM,
+			CrossSeriesReducer: monitoringpb.Aggregation_REDUCE_SUM,
+		},
+		SecondaryAggregation: &monitoringpb.Aggregation{
+			AlignmentPeriod:  durationpb.New(req.Alignment),
+			PerSeriesAligner: monitoringpb.Aggregation_ALIGN_PERCENTILE_95,
+		},
+		View:     monitoringpb.ListTimeSeriesRequest_FULL,
+		PageSize: maxRawHealthPoints,
+	}
 }
 
 func requestCountQuery(req provider.ServiceHealthRequest) *monitoringpb.ListTimeSeriesRequest {
@@ -121,6 +160,39 @@ func normalizeRequestCounts(req provider.ServiceHealthRequest, input []*monitori
 			{Name: provider.HealthServerErrorCount, Unit: "1", Points: errorPoints},
 		},
 	}, nil
+}
+
+func normalizeLatencyP95(req provider.ServiceHealthRequest, input []*monitoringpb.TimeSeries) (provider.HealthSeries, error) {
+	values := map[time.Time]float64{}
+	for _, series := range input {
+		for _, point := range series.GetPoints() {
+			timestamp := point.GetInterval().GetEndTime().AsTime().UTC()
+			if timestamp.IsZero() || timestamp.Before(req.Start) || timestamp.After(req.End) {
+				return provider.HealthSeries{}, fmt.Errorf("invalid latency point timestamp: %w", provider.ErrInvalidQuery)
+			}
+			if _, duplicate := values[timestamp]; duplicate {
+				return provider.HealthSeries{}, fmt.Errorf("duplicate reduced latency point: %w", provider.ErrInvalidQuery)
+			}
+			value, err := numericHealthValue(point.GetValue())
+			if err != nil {
+				return provider.HealthSeries{}, err
+			}
+			values[timestamp] = value
+		}
+	}
+	timestamps := make([]time.Time, 0, len(values))
+	for timestamp := range values {
+		timestamps = append(timestamps, timestamp)
+	}
+	slices.SortFunc(timestamps, func(a, b time.Time) int { return a.Compare(b) })
+	if len(timestamps) > provider.MaxHealthBuckets {
+		return provider.HealthSeries{}, provider.ErrResponseTooLarge
+	}
+	points := make([]provider.HealthPoint, 0, len(timestamps))
+	for _, timestamp := range timestamps {
+		points = append(points, provider.HealthPoint{Timestamp: timestamp, Value: values[timestamp]})
+	}
+	return provider.HealthSeries{Name: provider.HealthRequestLatencyP95, Unit: "ms", Points: points}, nil
 }
 
 func numericHealthValue(value *monitoringpb.TypedValue) (float64, error) {

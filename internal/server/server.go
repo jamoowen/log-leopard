@@ -188,7 +188,7 @@ type serviceHealthOutput struct {
 		Start            time.Time               `json:"start" doc:"Inclusive absolute start timestamp."`
 		End              time.Time               `json:"end" doc:"Exclusive absolute end timestamp."`
 		AlignmentSeconds int64                   `json:"alignmentSeconds" minimum:"60" doc:"Server-selected metric bucket width in seconds."`
-		Series           []provider.HealthSeries `json:"series" maxItems:"2" doc:"Fixed request and server-error count series."`
+		Series           []provider.HealthSeries `json:"series" maxItems:"3" doc:"Fixed request count, server-error count, and p95 request-latency series."`
 	}
 }
 
@@ -204,7 +204,7 @@ func (s *Server) register() {
 	huma.Register(s.API, operation("discover-sources", http.MethodGet, "/api/v1/sources", "Discover Cloud Run services", "List Cloud Run services for a profile; an all-logs fallback and sanitized warning header are returned when discovery fails.", session), s.discover)
 	huma.Register(s.API, operation("query-logs", http.MethodPost, "/api/v1/query", "Query Cloud Run logs", "Query a bounded time window of Cloud Run revision logs and return normalized entries plus an opaque cursor.", session), s.queryLogs)
 	huma.Register(s.API, operation("request-context", http.MethodPost, "/api/v1/request-context", "Get request context", "Find up to 200 Cloud Run revision entries across all services in the profile project, within 15 minutes before or after the selected event, by exact known request ID or trace ID locations.", session), s.requestContext)
-	huma.Register(s.API, operation("service-health", http.MethodPost, "/api/v1/service-health", "Get Cloud Run service health", "Return bounded request and server-error counts for one Cloud Run service using a fixed read-only Cloud Monitoring query. Metrics can be delayed by approximately two minutes.", session), s.serviceHealth)
+	huma.Register(s.API, operation("service-health", http.MethodPost, "/api/v1/service-health", "Get Cloud Run service health", "Return bounded request counts, server-error counts, and merged p95 request latency for one Cloud Run service using fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.", session), s.serviceHealth)
 }
 
 func operation(id, method, path, summary, description string, security []map[string][]string) huma.Operation {

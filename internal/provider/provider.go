@@ -87,18 +87,19 @@ type QueryResult struct {
 type HealthSeriesName string
 
 const (
-	HealthRequestCount     HealthSeriesName = "request_count"
-	HealthServerErrorCount HealthSeriesName = "server_error_count"
+	HealthRequestCount      HealthSeriesName = "request_count"
+	HealthServerErrorCount  HealthSeriesName = "server_error_count"
+	HealthRequestLatencyP95 HealthSeriesName = "request_latency_p95"
 )
 
 type HealthPoint struct {
 	Timestamp time.Time `json:"timestamp" doc:"End of the aligned metric interval."`
-	Value     float64   `json:"value" doc:"Observed count during the aligned interval."`
+	Value     float64   `json:"value" doc:"Observed metric value during the aligned interval, in the series unit."`
 }
 
 type HealthSeries struct {
-	Name   HealthSeriesName `json:"name" enum:"request_count,server_error_count" doc:"Fixed semantic metric series."`
-	Unit   string           `json:"unit" enum:"1" doc:"UCUM metric unit; 1 denotes a count."`
+	Name   HealthSeriesName `json:"name" enum:"request_count,server_error_count,request_latency_p95" doc:"Fixed semantic metric series."`
+	Unit   string           `json:"unit" enum:"1,ms" doc:"UCUM metric unit; 1 denotes a count and ms denotes milliseconds."`
 	Points []HealthPoint    `json:"points" doc:"Observed points in ascending timestamp order; absent intervals are not fabricated."`
 }
 
