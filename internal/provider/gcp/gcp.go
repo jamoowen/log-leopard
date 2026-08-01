@@ -23,9 +23,12 @@ import (
 
 type Provider struct {
 	discoverServices func(context.Context, string) ([]provider.Service, error)
+	serviceHealth    func(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
 }
 
-func New() *Provider { return &Provider{discoverServices: discoverServices} }
+func New() *Provider {
+	return &Provider{discoverServices: discoverServices, serviceHealth: queryServiceHealth}
+}
 
 func (*Provider) ADCStatus(ctx context.Context) (bool, string) {
 	_, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform.read-only")
@@ -102,6 +105,13 @@ func (*Provider) Query(ctx context.Context, req provider.QueryRequest) (provider
 		result.Entries = append(result.Entries, entry)
 	}
 	return result, nil
+}
+
+func (p *Provider) ServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) (provider.ServiceHealthResult, error) {
+	if err := validateHealthRequest(req); err != nil {
+		return provider.ServiceHealthResult{}, err
+	}
+	return p.serviceHealth(ctx, req)
 }
 
 func classifyError(err error) error {

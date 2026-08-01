@@ -12,14 +12,15 @@ LogLeopard is a local-first browser UI for finding and reading Google Cloud logs
 - Keep cloud credentials in a loopback-only Go process and cloud logs in Cloud Logging.
 - Preserve useful provider detail while normalizing common fields for reading and filtering.
 - Make query scope, pagination, and local persistence explicit and bounded.
+- Provide a zero-configuration Cloud Run service-health view that drills directly into the corresponding logs.
 
 ## Non-goals
 
-LogLeopard is not a log ingestion platform, database, metrics or alerting system, observability agent, or AI analysis service. It does not currently support providers other than GCP or resources other than Cloud Run.
+LogLeopard is not a log ingestion platform, database, general-purpose metrics/dashboard builder, alerting system, observability agent, or AI analysis service. Its service-health view uses a fixed, bounded set of built-in Cloud Run metrics. It does not currently support providers other than GCP or resources other than Cloud Run.
 
 ## Architecture
 
-The Go backend owns Application Default Credentials (ADC), GCP discovery and queries, query compilation, validation, normalized responses, opaque cursors, pairing sessions, and local connection profiles. The React/Vite frontend owns presentation and browser-local preferences; it receives neither cloud credentials nor provider credentials. Cloud Logging remains the source of truth.
+The Go backend owns Application Default Credentials (ADC), GCP discovery, fixed Cloud Monitoring queries, Cloud Logging queries, query compilation, validation, normalized responses, opaque cursors, pairing sessions, and local connection profiles. The React/Vite frontend owns presentation and browser-local preferences; it receives neither cloud credentials nor provider credentials. Cloud Logging and Cloud Monitoring remain the sources of truth.
 
 Go API types are authoritative. Huma generates the committed `openapi.json`, and the pinned `openapi-typescript` version generates the committed `web/src/api/schema.d.ts`. Keeping both artifacts in Git makes frontend installs and Node-only builds deterministic. Run `make api` after changing the Go API and `make api-check` to detect drift without modifying either artifact.
 
@@ -64,6 +65,7 @@ Grant the authenticated principal these minimum project-level roles on every pro
 
 - `roles/logging.viewer` to discover and read log entries.
 - `roles/run.viewer` to discover Cloud Run services.
+- `roles/monitoring.viewer` to read the built-in service-health metrics.
 
 Organization policies or custom roles can require additional permissions. If ADC warns about quota, set a quota project with `gcloud auth application-default set-quota-project PROJECT_ID`; that may require `serviceusage.services.use`, included in `roles/serviceusage.serviceUsageConsumer`, on the quota project.
 
@@ -138,6 +140,8 @@ Message normalization checks common JSON message fields before `textPayload` and
 - Optional 5, 10, or 30 second polling submits a fresh absolute query window on each tick. Polling pauses while the tab is hidden or an entry is open for inspection.
 - Entries with a request or trace identifier expose project-wide request context in chronological order.
 - `Cmd/Ctrl+K` opens the command palette; `/` focuses the text query and `Cmd/Ctrl+Enter` runs it.
+- Service Health shows fixed request and observed 5xx counts for an explicitly selected Cloud Run service over a one-hour, six-hour, 24-hour, or seven-day window. The selected target and window are remembered locally per connection; metric results are queried on demand, are not persisted, and can be delayed by approximately two minutes.
+- Selecting the highest-error interval opens a correlated timeline, then prepares an exact service/time/HTTP 5xx query in Logs.
 
 ## Build and test
 
@@ -165,7 +169,7 @@ pnpm --dir web run test:e2e  # optional Playwright suite; requires installed bro
 
 ## Current limitations and roadmap
 
-The current vertical slice supports one local user, GCP Cloud Logging, Cloud Run discovery, bounded text/structured/native querying, saved recipes, polling, field discovery, normalized/raw entry inspection, request context, and cursor pagination. Discovery can fall back to an all-logs source, but queries remain constrained to Cloud Run revisions. There is no updater, installer, or signed/notarized package yet, and broad accessibility, operating-system packaging, and authenticated live-GCP smoke coverage remain works in progress.
+The current vertical slice supports one local user, GCP Cloud Logging, a bounded Cloud Run request-health view, Cloud Run discovery, bounded text/structured/native querying, saved recipes, polling, field discovery, normalized/raw entry inspection, request context, and cursor pagination. Discovery can fall back to an all-logs source, but health requires one concrete service and log queries remain constrained to Cloud Run revisions. Latency, CPU, memory, instance, and startup metrics are deferred until their distribution and aggregation semantics can be represented correctly. There is no updater, installer, or signed/notarized package yet, and broad accessibility, operating-system packaging, and authenticated live-GCP smoke coverage remain works in progress.
 
 Near-term work is to harden the Cloud Run workflow, expand query and rendering tests, improve keyboard/accessibility behavior, and produce reproducible cross-platform releases. Additional providers or resource types should be added only after the provider boundary and user need are proven.
 

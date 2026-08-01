@@ -76,17 +76,32 @@ export const mockClient: ApiClient = {
         expiresAt: new Date(Date.now() - 1_000).toISOString(),
       };
     const offset = Number(input.cursor ?? 0);
-    const terms = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((term) => term && !term.includes(":"));
-    const filtered = fixtureEntries.filter(
-      (entry) =>
+    const terms =
+      input.mode === "native"
+        ? []
+        : query
+            .toLowerCase()
+            .split(/\s+/)
+            .filter((term) => term && !term.includes(":"));
+    const start = new Date(input.start).getTime();
+    const end = new Date(input.end).getTime();
+    const requiresServerError =
+      input.mode === "native" && query.trim() === "httpRequest.status >= 500";
+    const filtered = fixtureEntries.filter((entry) => {
+      const status = Number(
+        (entry.raw as { httpRequest?: { status?: unknown } }).httpRequest
+          ?.status,
+      );
+      return (
+        new Date(entry.timestamp).getTime() >= start &&
+        new Date(entry.timestamp).getTime() < end &&
         (!selectedSources.length || selectedSources.includes(entry.source)) &&
         (!selectedSeverities.length ||
           selectedSeverities.includes(entry.severity)) &&
-        terms.every((term) => entry.message.toLowerCase().includes(term)),
-    );
+        (!requiresServerError || status >= 500) &&
+        terms.every((term) => entry.message.toLowerCase().includes(term))
+      );
+    });
     const entries = filtered.slice(offset, offset + input.limit);
     const next = offset + entries.length;
     return {
@@ -108,6 +123,37 @@ export const mockClient: ApiClient = {
         )
         .slice(0, 12)
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    };
+  },
+  async serviceHealth(input, signal) {
+    await pause(260);
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const start = new Date(input.start).getTime();
+    const end = new Date(input.end).getTime();
+    const alignmentSeconds = 60;
+    const count = Math.min(300, Math.floor((end - start) / 60_000));
+    const requests = Array.from({ length: count }, (_, index) => ({
+      timestamp: new Date(start + (index + 1) * 60_000).toISOString(),
+      value: 28 + ((index * 7) % 23),
+    }));
+    const serverErrors = requests.map((point, index) => ({
+      timestamp: point.timestamp,
+      value:
+        index >= Math.floor(count * 0.55) && index <= Math.floor(count * 0.62)
+          ? 2 + (index % 4)
+          : index % 17 === 0
+            ? 1
+            : 0,
+    }));
+    return {
+      service: input.service,
+      start: input.start,
+      end: input.end,
+      alignmentSeconds,
+      series: [
+        { name: "request_count", unit: "1", points: requests },
+        { name: "server_error_count", unit: "1", points: serverErrors },
+      ],
     };
   },
 };

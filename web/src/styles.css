@@ -153,6 +153,31 @@ kbd {
 .top-actions {
   gap: 6px;
 }
+.app-view-tabs {
+  min-height: 40px;
+  flex: 0 0 40px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+}
+.app-view-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+.app-view-tabs button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
 .profile-trigger,
 .control-button {
   border: 1px solid var(--border);

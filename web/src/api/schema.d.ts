@@ -112,6 +112,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/service-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Cloud Run service health
+         * @description Return bounded request and server-error counts for one Cloud Run service using a fixed read-only Cloud Monitoring query. Metrics can be delayed by approximately two minutes.
+         */
+        post: operations["service-health"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/session/logout": {
         parameters: {
             query?: never;
@@ -321,6 +341,32 @@ export interface components {
             /** @description HTTP user agent. */
             userAgent?: string;
         };
+        HealthPoint: {
+            /**
+             * Format: date-time
+             * @description End of the aligned metric interval.
+             */
+            timestamp: string;
+            /**
+             * Format: double
+             * @description Observed count during the aligned interval.
+             */
+            value: number;
+        };
+        HealthSeries: {
+            /**
+             * @description Fixed semantic metric series.
+             * @enum {string}
+             */
+            name: "request_count" | "server_error_count";
+            /** @description Observed points in ascending timestamp order; absent intervals are not fabricated. */
+            points: components["schemas"]["HealthPoint"][] | null;
+            /**
+             * @description UCUM metric unit; 1 denotes a count.
+             * @enum {string}
+             */
+            unit: "1";
+        };
         MessageOutputBody: {
             /**
              * Format: uri
@@ -461,6 +507,55 @@ export interface components {
             readonly $schema?: string;
             /** @description Matching Cloud Run revision entries across all services, in ascending timestamp order. */
             entries: components["schemas"]["Entry"][] | null;
+        };
+        ServiceHealthInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ServiceHealthInputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: date-time
+             * @description Exclusive absolute end timestamp, no more than seven days after start.
+             */
+            end: string;
+            /** @description Connection profile ID; the project is resolved only from this stored profile. */
+            profileId: string;
+            /** @description Exact Cloud Run service name, aggregated across matching revisions and regions in the profile project. */
+            service: string;
+            /**
+             * Format: date-time
+             * @description Inclusive absolute start timestamp.
+             */
+            start: string;
+        };
+        ServiceHealthOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ServiceHealthOutputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description Server-selected metric bucket width in seconds.
+             */
+            alignmentSeconds: number;
+            /**
+             * Format: date-time
+             * @description Exclusive absolute end timestamp.
+             */
+            end: string;
+            /** @description Fixed request and server-error count series. */
+            series: components["schemas"]["HealthSeries"][] | null;
+            /** @description Requested Cloud Run service name. */
+            service: string;
+            /**
+             * Format: date-time
+             * @description Inclusive absolute start timestamp.
+             */
+            start: string;
         };
         SourceResponse: {
             /** @description Cloud Run service name; empty means all Cloud Run revision logs. */
@@ -692,6 +787,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RequestContextOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "service-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceHealthInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceHealthOutputBody"];
                 };
             };
             /** @description Error */

@@ -291,6 +291,62 @@
         },
         "type": "object"
       },
+      "HealthPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "timestamp": {
+            "description": "End of the aligned metric interval.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "description": "Observed count during the aligned interval.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp",
+          "value"
+        ],
+        "type": "object"
+      },
+      "HealthSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Fixed semantic metric series.",
+            "enum": [
+              "request_count",
+              "server_error_count"
+            ],
+            "type": "string"
+          },
+          "points": {
+            "description": "Observed points in ascending timestamp order; absent intervals are not fabricated.",
+            "items": {
+              "$ref": "#/components/schemas/HealthPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "unit": {
+            "description": "UCUM metric unit; 1 denotes a count.",
+            "enum": [
+              "1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "points"
+        ],
+        "type": "object"
+      },
       "MessageOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -610,6 +666,103 @@
         },
         "required": [
           "entries"
+        ],
+        "type": "object"
+      },
+      "ServiceHealthInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/ServiceHealthInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "end": {
+            "description": "Exclusive absolute end timestamp, no more than seven days after start.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "profileId": {
+            "description": "Connection profile ID; the project is resolved only from this stored profile.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "service": {
+            "description": "Exact Cloud Run service name, aggregated across matching revisions and regions in the profile project.",
+            "maxLength": 49,
+            "minLength": 1,
+            "pattern": "^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$",
+            "type": "string"
+          },
+          "start": {
+            "description": "Inclusive absolute start timestamp.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId",
+          "service",
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
+      "ServiceHealthOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/ServiceHealthOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "alignmentSeconds": {
+            "description": "Server-selected metric bucket width in seconds.",
+            "format": "int64",
+            "minimum": 60,
+            "type": "integer"
+          },
+          "end": {
+            "description": "Exclusive absolute end timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "series": {
+            "description": "Fixed request and server-error count series.",
+            "items": {
+              "$ref": "#/components/schemas/HealthSeries"
+            },
+            "maxItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "service": {
+            "description": "Requested Cloud Run service name.",
+            "type": "string"
+          },
+          "start": {
+            "description": "Inclusive absolute start timestamp.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "start",
+          "end",
+          "alignmentSeconds",
+          "series"
         ],
         "type": "object"
       },
@@ -972,6 +1125,53 @@
           }
         ],
         "summary": "Get request context",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/service-health": {
+      "post": {
+        "description": "Return bounded request and server-error counts for one Cloud Run service using a fixed read-only Cloud Monitoring query. Metrics can be delayed by approximately two minutes.",
+        "operationId": "service-health",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceHealthInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealthOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get Cloud Run service health",
         "tags": [
           "LogLeopard"
         ]

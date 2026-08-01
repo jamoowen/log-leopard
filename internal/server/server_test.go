@@ -161,7 +161,7 @@ func TestHostOriginAndOpenAPI(t *testing.T) {
 		t.Fatalf("OpenAPI status %d: %s", w.Code, w.Body.String())
 	}
 	for _, want := range []string{
-		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`,
+		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`,
 		`"description":"Exact payload path selected for message."`, `"description":"Exact structured-field comparison operator."`,
 		`"X-LogLeopard-Warning"`,
 	} {
@@ -239,9 +239,111 @@ func TestQueryCursorIsBoundToRequest(t *testing.T) {
 
 type recordingProvider struct {
 	*fake.Provider
-	requests []providerapi.QueryRequest
-	result   providerapi.QueryResult
-	err      error
+	requests       []providerapi.QueryRequest
+	result         providerapi.QueryResult
+	err            error
+	healthRequests []providerapi.ServiceHealthRequest
+	healthResult   providerapi.ServiceHealthResult
+	healthErr      error
+}
+
+func (p *recordingProvider) ServiceHealth(_ context.Context, req providerapi.ServiceHealthRequest) (providerapi.ServiceHealthResult, error) {
+	p.healthRequests = append(p.healthRequests, req)
+	return p.healthResult, p.healthErr
+}
+
+func TestServiceHealthUsesStoredProjectAndServerBounds(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	p := &recordingProvider{Provider: fake.New()}
+	p.healthResult = providerapi.ServiceHealthResult{
+		Service: "checkout-api", Start: start, End: start.Add(time.Hour), Alignment: time.Minute,
+		Series: []providerapi.HealthSeries{
+			{Name: providerapi.HealthRequestCount, Unit: "1", Points: []providerapi.HealthPoint{}},
+			{Name: providerapi.HealthServerErrorCount, Unit: "1", Points: []providerapi.HealthPoint{}},
+		},
+	}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	body := map[string]any{"profileId": created.ID, "service": "checkout-api", "start": start, "end": start.Add(time.Hour)}
+	response := request(t, s, http.MethodPost, "/api/v1/service-health", body, cookie, testOrigin)
+	if response.Code != http.StatusOK {
+		t.Fatalf("health status %d: %s", response.Code, response.Body.String())
+	}
+	if len(p.healthRequests) != 1 {
+		t.Fatalf("health requests = %d", len(p.healthRequests))
+	}
+	got := p.healthRequests[0]
+	if got.ProjectID != "synthetic-project-123" || got.Service != "checkout-api" || got.Alignment != time.Minute {
+		t.Fatalf("unexpected provider request: %#v", got)
+	}
+	if strings.Contains(response.Body.String(), "synthetic-project-123") {
+		t.Fatalf("project leaked into response: %s", response.Body.String())
+	}
+}
+
+func TestServiceHealthRejectsInvalidScopeBeforeProviderCall(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New()}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	for _, body := range []map[string]any{
+		{"profileId": created.ID, "service": `api" OR true`, "start": start, "end": start.Add(time.Hour)},
+		{"profileId": created.ID, "service": "checkout-api", "start": start, "end": start},
+		{"profileId": created.ID, "service": "checkout-api", "start": start, "end": start.Add(8 * 24 * time.Hour)},
+	} {
+		response := request(t, s, http.MethodPost, "/api/v1/service-health", body, cookie, testOrigin)
+		if response.Code != http.StatusBadRequest && response.Code != http.StatusUnprocessableEntity {
+			t.Errorf("invalid scope status %d: %s", response.Code, response.Body.String())
+		}
+	}
+	if len(p.healthRequests) != 0 {
+		t.Fatalf("provider received invalid requests: %#v", p.healthRequests)
+	}
+}
+
+func TestServiceHealthReturnsMonitoringSpecificProviderErrors(t *testing.T) {
+	tests := []struct {
+		err        error
+		statusCode int
+		detail     string
+	}{
+		{err: providerapi.ErrPermissionDenied, statusCode: http.StatusForbidden, detail: "roles/monitoring.viewer"},
+		{err: providerapi.ErrUnavailable, statusCode: http.StatusServiceUnavailable, detail: "Cloud Monitoring"},
+		{err: providerapi.ErrConfiguration, statusCode: http.StatusFailedDependency, detail: "Cloud Monitoring API"},
+		{err: providerapi.ErrInvalidQuery, statusCode: http.StatusInternalServerError, detail: "service health could not be loaded"},
+	}
+	for _, test := range tests {
+		p := &recordingProvider{Provider: fake.New(), healthErr: fmt.Errorf("private filter: %w", test.err)}
+		s, pairing := newTestServerWithProvider(t, p)
+		cookie := pair(t, s, pairing)
+		created := createTestProfile(t, s, cookie)
+		now := time.Now().UTC()
+		response := request(t, s, http.MethodPost, "/api/v1/service-health", map[string]any{
+			"profileId": created.ID, "service": "checkout-api", "start": now.Add(-time.Hour), "end": now,
+		}, cookie, testOrigin)
+		if response.Code != test.statusCode || !strings.Contains(response.Body.String(), test.detail) || strings.Contains(response.Body.String(), "private filter") {
+			t.Errorf("error response %d: %s", response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestHealthAlignmentCapsBuckets(t *testing.T) {
+	tests := []struct {
+		window time.Duration
+		want   time.Duration
+	}{
+		{window: time.Hour, want: time.Minute},
+		{window: 5 * time.Hour, want: time.Minute},
+		{window: 5*time.Hour + time.Second, want: 2 * time.Minute},
+		{window: 7 * 24 * time.Hour, want: 34 * time.Minute},
+	}
+	for _, test := range tests {
+		if got := healthAlignment(test.window); got != test.want {
+			t.Errorf("healthAlignment(%s) = %s, want %s", test.window, got, test.want)
+		}
+	}
 }
 
 func (p *recordingProvider) Query(_ context.Context, req providerapi.QueryRequest) (providerapi.QueryResult, error) {
