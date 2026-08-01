@@ -1,4 +1,4 @@
-.PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake
+.PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake verify-release
 
 build:
 	go build ./cmd/log-leopard
@@ -66,3 +66,7 @@ run: web-build
 
 run-fake: web-build
 	go run -tags production ./cmd/log-leopard -fake
+
+verify-release:
+	@test -n "$(TAG)" || (echo "usage: make verify-release TAG=v0.1.0-rc.1" >&2; exit 2)
+	sh ./scripts/verify-release.sh "$(TAG)"

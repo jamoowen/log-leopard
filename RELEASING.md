@@ -9,7 +9,7 @@ Pushing a matching tag runs the `Draft release` workflow. It verifies the source
 Before the first tag:
 
 1. In **Settings > General > Releases**, enable release immutability. It applies only to releases published after it is enabled.
-2. In **Settings > Environments**, create a `release` environment. Restrict deployment branches and tags to `v*`; optionally require maintainer approval.
+2. In **Settings > Environments**, click **New environment**, name it exactly `release`, and select **Configure environment**. Under **Deployment branches and tags**, choose **Selected branches and tags**, add a **Tag** rule matching `v*.*.*`, and do not add a branch rule. Optionally add yourself under **Required reviewers** to create a manual pause; while you are the only maintainer, leave **Prevent self-review** disabled or you will be unable to approve your own release job. No environment secrets are required.
 3. Require the normal CI checks on `main` through a branch ruleset.
 4. Review the licenses and notice requirements of the bundled Go and frontend dependencies. Add any required third-party notices before distributing binaries.
 
@@ -34,18 +34,15 @@ The tag is the sole release version. Never move or reuse a pushed release tag; f
 ## Review and publish the draft
 
 1. Confirm the tag's `Draft release` workflow succeeded.
-2. Open the draft under **Releases** and verify that all six platform archives and `SHA256SUMS` are present.
-3. Download the archive for your platform and verify its checksum. On macOS:
+2. From a macOS or Linux checkout, run one command to verify that all expected assets exist, download the archive for the current machine, check its SHA-256 checksum and embedded version, and start it briefly with synthetic data:
 
    ```sh
-   shasum -a 256 -c SHA256SUMS --ignore-missing
-   ./log-leopard -version
-   ./log-leopard -fake
+   make verify-release TAG=v0.1.0-rc.1
    ```
 
-4. Edit the generated notes. Include what this release is, highlights, install/run steps, known limitations, unsigned/unnotarized status, checksum instructions, and a link to the tag source.
-5. Keep an `-rc.N` release marked as a prerelease. Publish the draft only after its notes and assets have been reviewed.
-6. After publication, verify immutability with `gh release verify v0.1.0-rc.1` and verify a downloaded archive with `gh release verify-asset v0.1.0-rc.1 PATH_TO_ARCHIVE`.
+3. Edit the generated notes. Include what this release is, highlights, install/run steps, known limitations, unsigned/unnotarized status, checksum instructions, and a link to the tag source.
+4. Keep an `-rc.N` release marked as a prerelease. Publish the draft only after its notes and assets have been reviewed.
+5. After publication, verify immutability with `gh release verify v0.1.0-rc.1`. The pre-publication command already verifies the downloaded archive against `SHA256SUMS`; `gh release verify-asset` is an optional second check against GitHub's release attestation.
 
 When the candidate is accepted, repeat the process from the chosen reviewed commit using a new `v0.1.0` tag. Do not rename the candidate or remove its prerelease status to turn it into the final release.
 
