@@ -1,0 +1,54 @@
+version: 2
+
+project_name: log-leopard
+
+before:
+  hooks:
+    - pnpm --dir web run build
+
+builds:
+  - id: log-leopard
+    main: ./cmd/log-leopard
+    binary: log-leopard
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    tags:
+      - production
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - ids:
+      - log-leopard
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: SHA256SUMS
+
+changelog:
+  use: github-native
+
+release:
+  draft: true
+  prerelease: auto

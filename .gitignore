@@ -1,6 +1,7 @@
 # Go
 /log-leopard
 /bin/
+/dist/
 /coverage.out
 
 # Frontend

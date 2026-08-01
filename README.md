@@ -25,6 +25,12 @@ Go API types are authoritative. Huma generates the committed `openapi.json`, and
 
 Production builds embed `web/dist` in the Go binary. Development Go builds use an empty asset filesystem, so Go tests do not require Node or a frontend build.
 
+## Install
+
+Until the first package is published, build from source using the requirements below. Tagged releases provide self-contained archives for macOS, Linux, and Windows from the [GitHub Releases page](https://github.com/jamoowen/log-leopard/releases); the executable contains the web UI and needs no Node.js runtime. Release binaries are not currently code-signed or notarized.
+
+After extracting an archive, authenticate with ADC as described below and run `./log-leopard` (`log-leopard.exe` on Windows). Use `./log-leopard -version` to identify a packaged build. Verify downloaded archives against the attached `SHA256SUMS` before running them.
+
 ## Requirements
 
 - Go 1.26.5 or newer in the 1.26 release line
@@ -159,9 +165,13 @@ pnpm --dir web run test:e2e  # optional Playwright suite; requires installed bro
 
 ## Current limitations and roadmap
 
-The current vertical slice supports one local user, GCP Cloud Logging, Cloud Run discovery, bounded text/structured/native querying, saved recipes, polling, field discovery, normalized/raw entry inspection, request context, and cursor pagination. Discovery can fall back to an all-logs source, but queries remain constrained to Cloud Run revisions. There is no packaged release or updater yet, and broad accessibility, operating-system packaging, and authenticated live-GCP smoke coverage remain works in progress.
+The current vertical slice supports one local user, GCP Cloud Logging, Cloud Run discovery, bounded text/structured/native querying, saved recipes, polling, field discovery, normalized/raw entry inspection, request context, and cursor pagination. Discovery can fall back to an all-logs source, but queries remain constrained to Cloud Run revisions. There is no updater, installer, or signed/notarized package yet, and broad accessibility, operating-system packaging, and authenticated live-GCP smoke coverage remain works in progress.
 
 Near-term work is to harden the Cloud Run workflow, expand query and rendering tests, improve keyboard/accessibility behavior, and produce reproducible cross-platform releases. Additional providers or resource types should be added only after the provider boundary and user need are proven.
+
+## Contributing and releases
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development expectations, privacy rules, and the AI-assisted contribution policy. Maintainers should follow [RELEASING.md](RELEASING.md); tagged releases are built as drafts and require human review before publication.
 
 ## License and naming
 

@@ -32,6 +32,16 @@ func TestMakePairingURL(t *testing.T) {
 	}
 }
 
+func TestVersionString(t *testing.T) {
+	oldVersion, oldCommit := version, commit
+	t.Cleanup(func() { version, commit = oldVersion, oldCommit })
+	version, commit = "0.1.0", "abc1234"
+
+	if got, want := versionString(), "log-leopard 0.1.0 (abc1234)"; got != want {
+		t.Fatalf("versionString() = %q, want %q", got, want)
+	}
+}
+
 func TestBrowserCommandUsesURLAsAnArgument(t *testing.T) {
 	url := `http://127.0.0.1:8787/#pair=token&x=$(unsafe);still-one-argument`
 	tests := []struct {

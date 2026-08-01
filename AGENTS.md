@@ -52,6 +52,7 @@
 ## Documentation And Git
 
 - Keep `README.md` accurate when setup, commands, architecture, security, or behavior changes.
+- Follow `CONTRIBUTING.md` for AI-assisted work and `RELEASING.md` for release preparation.
 - `CLAUDE.md` imports this file; keep shared instructions here rather than duplicating them.
 - Do not edit generated OpenAPI or TypeScript schema output manually.
 - Run `make check` before handing work back. CI additionally runs the race detector, Playwright, and vulnerability scans.

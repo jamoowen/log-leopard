@@ -28,6 +28,11 @@ import (
 	"github.com/jamoowen/log-leopard/internal/server"
 )
 
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "log-leopard:", err)
@@ -43,7 +48,12 @@ func run() error {
 	browser := flag.String("browser", "default", "browser used with -open: default, brave, chrome, firefox, or safari")
 	browserURL := flag.String("browser-url", "", "loopback URL hosting the browser UI (defaults to the backend)")
 	openAPIPath := flag.String("write-openapi", "", "write OpenAPI JSON and exit")
+	showVersion := flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(versionString())
+		return nil
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -125,6 +135,10 @@ func run() error {
 		}
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
+}
+
+func versionString() string {
+	return fmt.Sprintf("log-leopard %s (%s)", version, commit)
 }
 
 func makePairingURL(base, host, token string) (string, error) {
