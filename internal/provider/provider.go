@@ -1,0 +1,89 @@
+package provider
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+)
+
+const (
+	MaxPageSize      = 200
+	MaxResponseBytes = 4 << 20
+)
+
+var (
+	ErrAuthentication   = errors.New("cloud provider authentication failed")
+	ErrPermissionDenied = errors.New("cloud provider permission denied")
+	ErrRateLimited      = errors.New("cloud provider rate limited")
+	ErrUnavailable      = errors.New("cloud provider unavailable")
+	ErrInvalidQuery     = errors.New("cloud provider rejected query")
+	ErrConfiguration    = errors.New("cloud provider configuration failed")
+	ErrResponseTooLarge = errors.New("provider response exceeds response byte limit")
+)
+
+type Service struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Discovery struct {
+	Services []Service `json:"services"`
+	Warning  string    `json:"warning,omitempty"`
+}
+
+type HTTPRequest struct {
+	Method    string `json:"method,omitempty" doc:"HTTP request method."`
+	URL       string `json:"url,omitempty" doc:"Requested URL."`
+	Status    int    `json:"status,omitempty" doc:"HTTP response status code."`
+	Latency   string `json:"latency,omitempty" doc:"Request latency as a protobuf duration."`
+	RemoteIP  string `json:"remoteIp,omitempty" doc:"Originating client IP as reported by Cloud Logging."`
+	UserAgent string `json:"userAgent,omitempty" doc:"HTTP user agent."`
+	Referer   string `json:"referer,omitempty" doc:"HTTP referrer."`
+	Protocol  string `json:"protocol,omitempty" doc:"HTTP protocol used for the request."`
+}
+
+type Entry struct {
+	ID               string            `json:"id" doc:"Provider insert ID, when present."`
+	Timestamp        time.Time         `json:"timestamp" doc:"Event timestamp."`
+	ReceiveTimestamp time.Time         `json:"receiveTimestamp,omitzero" doc:"Cloud Logging receive timestamp."`
+	Severity         string            `json:"severity" doc:"Normalized GCP severity name."`
+	SeverityOriginal string            `json:"severityOriginal" doc:"Original top-level GCP severity, or original JSON level when it supplies the normalized severity."`
+	Message          string            `json:"message" doc:"Display message selected from the structured or text payload."`
+	MessageSource    string            `json:"messageSource" doc:"Exact payload path selected for message."`
+	Source           string            `json:"source" doc:"Normalized service or monitored resource name."`
+	SourceOriginal   string            `json:"sourceOriginal" doc:"Original GCP log name."`
+	RequestID        string            `json:"requestId,omitempty" doc:"Request ID found in a common structured payload location."`
+	Trace            string            `json:"trace,omitempty" doc:"Trace resource name or trace identifier."`
+	SpanID           string            `json:"spanId,omitempty" doc:"Cloud Trace span ID."`
+	HTTPRequest      *HTTPRequest      `json:"httpRequest,omitempty" doc:"Common HTTP request metadata."`
+	Labels           map[string]string `json:"labels" doc:"GCP log entry labels."`
+	Structured       map[string]any    `json:"structured" nullable:"true" doc:"Decoded jsonPayload, or null for non-JSON entries."`
+	Raw              json.RawMessage   `json:"raw" doc:"Original GCP LogEntry JSON."`
+}
+
+type QueryRequest struct {
+	ProjectID string
+	Filter    string
+	PageSize  int
+	PageToken string
+	Order     Order
+}
+
+type Order string
+
+const (
+	OrderDescending Order = "descending"
+	OrderAscending  Order = "ascending"
+)
+
+type QueryResult struct {
+	Entries       []Entry
+	NextPageToken string
+}
+
+type Provider interface {
+	ADCStatus(context.Context) (bool, string)
+	Discover(context.Context, string) Discovery
+	Query(context.Context, QueryRequest) (QueryResult, error)
+}

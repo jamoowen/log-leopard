@@ -1,0 +1,30 @@
+# Go
+/log-leopard
+/bin/
+/coverage.out
+
+# Frontend
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/web/playwright-report/
+/web/test-results/
+
+# Local configuration and credentials
+/.env
+/.env.*
+!/.env.example
+*.pem
+*.key
+*.p12
+*.json.key
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Agent-local files
+CLAUDE.local.md
+.claude/settings.local.json

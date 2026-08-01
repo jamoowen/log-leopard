@@ -1,0 +1,163 @@
+# LogLeopard
+
+LogLeopard is a local-first browser UI for finding and reading Google Cloud logs. It aims to make focused log investigation fast without copying cloud logs or credentials into another hosted service.
+
+## Goals
+
+- Provide a dense, keyboard-friendly interface for Cloud Run log investigation.
+- Keep cloud credentials in a loopback-only Go process and cloud logs in Cloud Logging.
+- Preserve useful provider detail while normalizing common fields for reading and filtering.
+- Make query scope, pagination, and local persistence explicit and bounded.
+
+## Non-goals
+
+LogLeopard is not a log ingestion platform, database, metrics or alerting system, observability agent, or AI analysis service. It does not currently support providers other than GCP or resources other than Cloud Run.
+
+## Architecture
+
+The Go backend owns Application Default Credentials (ADC), GCP discovery and queries, query compilation, validation, normalized responses, opaque cursors, pairing sessions, and local connection profiles. The React/Vite frontend owns presentation and browser-local preferences; it receives neither cloud credentials nor provider credentials. Cloud Logging remains the source of truth.
+
+Go API types are authoritative. Huma generates the committed `openapi.json`, and the pinned `openapi-typescript` version generates the committed `web/src/api/schema.d.ts`. Keeping both artifacts in Git makes frontend installs and Node-only builds deterministic. Run `make api` after changing the Go API and `make api-check` to detect drift without modifying either artifact.
+
+Production builds embed `web/dist` in the Go binary. Development Go builds use an empty asset filesystem, so Go tests do not require Node or a frontend build.
+
+## Requirements
+
+- Go 1.26
+- Node.js 22.12+ and pnpm 11.8.0
+- Google Cloud CLI for live GCP authentication
+- `golangci-lint` v2.10.1 for the complete local quality gate
+
+Install frontend dependencies once:
+
+```sh
+pnpm --dir web install --frozen-lockfile
+```
+
+## GCP access
+
+LogLeopard uses ADC. ADC supports user credentials, service-account impersonation, and service-account key files referenced through `GOOGLE_APPLICATION_CREDENTIALS`. LogLeopard does not accept key uploads through the browser or copy private keys into its own configuration. For user credentials:
+
+```sh
+gcloud auth application-default login
+```
+
+An existing service-account key file also works through ADC without entering the browser or LogLeopard configuration:
+
+```sh
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/read-only-service-account.json make dev
+```
+
+Prefer impersonation where possible because service-account keys are long-lived credentials that must be separately protected, rotated, and revoked.
+
+Grant the authenticated principal these minimum project-level roles on every project it will query:
+
+- `roles/logging.viewer` to discover and read log entries.
+- `roles/run.viewer` to discover Cloud Run services.
+
+Organization policies or custom roles can require additional permissions. If ADC warns about quota, set a quota project with `gcloud auth application-default set-quota-project PROJECT_ID`; that may require `serviceusage.services.use`, included in `roles/serviceusage.serviceUsageConsumer`, on the quota project.
+
+For keyless read-only impersonation, grant the service account the two viewer roles above and grant the developer `roles/iam.serviceAccountTokenCreator` on that service account, then create impersonated ADC:
+
+```sh
+gcloud auth application-default login \
+  --impersonate-service-account=log-leopard-reader@PROJECT_ID.iam.gserviceaccount.com
+```
+
+Impersonation avoids long-lived service-account keys. The impersonated account should have no write roles.
+
+## Run locally
+
+For the packaged-style app, the backend prints a loopback pairing URL to copy into any browser. These commands run the embedded production UI without a separate frontend process:
+
+```sh
+go run ./cmd/log-leopard          # live GCP through ADC
+make run-fake                     # synthetic data, no GCP access
+go run ./cmd/log-leopard -open    # explicitly use the default browser
+```
+
+For frontend development, one command builds and supervises the backend and Vite, waits for both, prints the correctly paired Vite URL, and stops both processes on exit:
+
+```sh
+make dev       # live GCP through ADC
+make dev-fake  # synthetic data, no GCP access
+```
+
+The root Vite config proxies `/api` and `/openapi.json` to `http://127.0.0.1:8787`. The lower-level `make web-dev` command remains available when intentionally managing the backend separately; set `LOG_LEOPARD_DEV_BACKEND` to change its proxy target.
+
+Local browser pairing happens before and independently of Google Cloud authentication. Pairing links are single-use and expire after ten minutes. If pairing fails, stop the running command, run `make dev` again, and open only the newest URL it prints; ADC or permission problems appear separately after pairing succeeds.
+
+Connection profiles store a display name and GCP project ID, never credentials.
+
+## Query language
+
+Queries require absolute `start` and `end` timestamps and are limited to seven days. Page sizes are 1 to 200, normalized responses are capped at 4 MiB, and opaque short-lived cursors are bound to the connection, compiled filter, time window, and page size.
+
+The search syntax supports:
+
+- Free or quoted text: `timeout "connection reset"`
+- Implicit `AND`: `timeout service:checkout`
+- Aliases: `message`/`msg`, `service`/`source`, `severity`/`level`, `status`/`http.status_code`, and `trace`
+- Field negation: `-@http.method:POST`
+- JSON paths: `@request.user.id:123` or `json.request.user.id:123`
+
+Explicit `AND`, `OR`, parentheses, and negated free text are rejected. Prefix a JSON path with `@` or `json.` to bypass aliases. Every query enforces `resource.type="cloud_run_revision"` and the requested time window. Native mode accepts a complete GCP Logging filter, validates balanced quotes and parentheses, and still encloses it within those fixed constraints.
+
+Structured mode uses a provider-neutral `predicates` array instead of `query`. Each predicate has `path`, `operator`, and `value`; paths are relative to `jsonPayload` and contain up to 20 dot-separated identifier segments. Up to 50 predicates are combined with `AND`. The exact operators and value types are:
+
+- `equals`: string, finite number, or boolean
+- `contains`: non-empty string
+- `exists`: boolean (`false` means the field must not exist)
+- `gt` and `lt`: finite number
+
+`query` is accepted only in `leopard` and `native` modes, while `predicates` is accepted only in `structured` mode. Sources, severities, and the fixed Cloud Run/time constraints apply in all three modes.
+
+The authenticated request-context API is `POST /api/v1/request-context` with `profileId`, `eventTimestamp`, and at least one of `requestId` or `traceId`. It exact-matches only the backend's known request/trace locations, across all Cloud Run revisions and all services in the profile project, from 15 minutes before through 15 minutes after the selected timestamp. It returns `{ "entries": [...] }` with at most 200 entries in ascending timestamp order and the same 4 MiB response bound as normal queries. Active source, severity, and query filters are deliberately not applied.
+
+Message normalization checks common JSON message fields before `textPayload` and compact JSON fallback. Responses retain the selected message path, normalized and original severity, common HTTP/trace/request metadata, and the complete raw entry.
+
+## Daily-use workflow
+
+- Compact, structured, and raw result modes share a virtualized message-led grid and detailed entry inspector.
+- The structured builder creates validated `jsonPayload` predicates without requiring GCP filter syntax.
+- Loaded structured payloads feed a bounded field browser. Fields can be promoted into filters or pinned into compact rows per connection.
+- Named saved-query recipes retain a connection, relative time preset, sources, filters, query mode, and display mode. Absolute timestamps and results are never saved.
+- Optional 5, 10, or 30 second polling submits a fresh absolute query window on each tick. Polling pauses while the tab is hidden or an entry is open for inspection.
+- Entries with a request or trace identifier expose project-wide request context in chronological order.
+- `Cmd/Ctrl+K` opens the command palette; `/` focuses the text query and `Cmd/Ctrl+Enter` runs it.
+
+## Build and test
+
+```sh
+make api                # regenerate OpenAPI from Go, then TypeScript types
+make api-check          # check both committed contracts without updating them
+make fmt                # format Go and frontend source
+make check              # format, lint, vet, tests, frontend build, and API drift
+go test -race ./...     # optional Go race check
+make build              # development Go binary
+make build-production   # frontend build plus production-tagged embedded binary
+pnpm --dir web run test:e2e  # optional Playwright suite; requires installed browser
+```
+
+`make check` deliberately excludes Playwright because browser installation is an additional environment requirement. CI runs the race detector, desktop and mobile Playwright workflows, Go vulnerability analysis, and a production dependency audit in addition to the local gate. The live schema is available from the backend at `GET /openapi.json`.
+
+## Privacy and security
+
+- The server binds to a numeric loopback address and does not enable permissive CORS.
+- A random ten-minute, single-use URL-fragment token creates a twelve-hour `HttpOnly`, `SameSite=Strict` session. Protected APIs require that session, and mutations also require the exact expected `Origin`.
+- Profiles are atomically stored with mode `0600` under the OS user config directory (`LogLeopard/connections.json`) unless `-config` overrides it.
+- Query results remain in memory and are never persisted. The browser may store display preferences, per-connection field pins, named query recipes, and up to 50 query strings locally. History and recipe storage can be disabled and cleared in the UI.
+- Application logs exclude credentials, project IDs, query text, provider filters, and returned log contents.
+- Log content is untrusted data and is rendered as text rather than injected HTML.
+
+## Current limitations and roadmap
+
+The current vertical slice supports one local user, GCP Cloud Logging, Cloud Run discovery, bounded text/structured/native querying, saved recipes, polling, field discovery, normalized/raw entry inspection, request context, and cursor pagination. Discovery can fall back to an all-logs source, but queries remain constrained to Cloud Run revisions. There is no packaged release or updater yet, and broad accessibility, operating-system packaging, and authenticated live-GCP smoke coverage remain works in progress.
+
+Near-term work is to harden the Cloud Run workflow, expand query and rendering tests, improve keyboard/accessibility behavior, and produce reproducible cross-platform releases. Additional providers or resource types should be added only after the provider boundary and user need are proven.
+
+## License and naming
+
+LogLeopard is free software licensed under the [GNU Affero General Public License v3.0](LICENSE). If you modify it and make that version available to users over a network, the AGPL requires offering those users the corresponding source; see the license for the complete terms.
+
+“LogLeopard” is a project name, not an affiliation or endorsement. Google Cloud, Cloud Logging, Cloud Run, and related marks are trademarks of Google LLC. This project is not affiliated with or endorsed by Google.

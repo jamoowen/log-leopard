@@ -1,0 +1,1138 @@
+{
+  "components": {
+    "schemas": {
+      "AuthStatusOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/AuthStatusOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "available": {
+            "description": "Whether Application Default Credentials are available.",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "Sanitized credential status message.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "message"
+        ],
+        "type": "object"
+      },
+      "CookieOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/CookieOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "paired": {
+            "description": "Whether pairing succeeded.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paired"
+        ],
+        "type": "object"
+      },
+      "Entry": {
+        "additionalProperties": false,
+        "properties": {
+          "httpRequest": {
+            "$ref": "#/components/schemas/HTTPRequest",
+            "description": "Common HTTP request metadata."
+          },
+          "id": {
+            "description": "Provider insert ID, when present.",
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "GCP log entry labels.",
+            "type": "object"
+          },
+          "message": {
+            "description": "Display message selected from the structured or text payload.",
+            "type": "string"
+          },
+          "messageSource": {
+            "description": "Exact payload path selected for message.",
+            "type": "string"
+          },
+          "raw": {
+            "description": "Original GCP LogEntry JSON."
+          },
+          "receiveTimestamp": {
+            "description": "Cloud Logging receive timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Request ID found in a common structured payload location.",
+            "type": "string"
+          },
+          "severity": {
+            "description": "Normalized GCP severity name.",
+            "type": "string"
+          },
+          "severityOriginal": {
+            "description": "Original top-level GCP severity, or original JSON level when it supplies the normalized severity.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Normalized service or monitored resource name.",
+            "type": "string"
+          },
+          "sourceOriginal": {
+            "description": "Original GCP log name.",
+            "type": "string"
+          },
+          "spanId": {
+            "description": "Cloud Trace span ID.",
+            "type": "string"
+          },
+          "structured": {
+            "additionalProperties": {},
+            "description": "Decoded jsonPayload, or null for non-JSON entries.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "description": "Event timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "trace": {
+            "description": "Trace resource name or trace identifier.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "severity",
+          "severityOriginal",
+          "message",
+          "messageSource",
+          "source",
+          "sourceOriginal",
+          "labels",
+          "structured",
+          "raw"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+            "type": "string"
+          },
+          "message": {
+            "description": "Error message text",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value at the given location"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorModel": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/ErrorModel.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "detail": {
+            "description": "A human-readable explanation specific to this occurrence of the problem.",
+            "examples": [
+              "Property foo is required but is missing."
+            ],
+            "type": "string"
+          },
+          "errors": {
+            "description": "Optional list of individual error details",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "instance": {
+            "description": "A URI reference that identifies the specific occurrence of the problem.",
+            "examples": [
+              "https://example.com/error-log/abc123"
+            ],
+            "format": "uri",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code",
+            "examples": [
+              400
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+            "examples": [
+              "Bad Request"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "A URI reference to human-readable documentation for the error.",
+            "examples": [
+              "https://example.com/errors/example"
+            ],
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FieldPredicate": {
+        "additionalProperties": false,
+        "properties": {
+          "operator": {
+            "description": "Exact structured-field comparison operator.",
+            "enum": [
+              "equals",
+              "contains",
+              "exists",
+              "gt",
+              "lt"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Dot-separated jsonPayload path. Each segment must start with a letter or underscore and contain only letters, digits, and underscores.",
+            "maxLength": 256,
+            "type": "string"
+          },
+          "value": {
+            "description": "Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt."
+          }
+        },
+        "required": [
+          "path",
+          "operator",
+          "value"
+        ],
+        "type": "object"
+      },
+      "HTTPRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "latency": {
+            "description": "Request latency as a protobuf duration.",
+            "type": "string"
+          },
+          "method": {
+            "description": "HTTP request method.",
+            "type": "string"
+          },
+          "protocol": {
+            "description": "HTTP protocol used for the request.",
+            "type": "string"
+          },
+          "referer": {
+            "description": "HTTP referrer.",
+            "type": "string"
+          },
+          "remoteIp": {
+            "description": "Originating client IP as reported by Cloud Logging.",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP response status code.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "description": "Requested URL.",
+            "type": "string"
+          },
+          "userAgent": {
+            "description": "HTTP user agent.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MessageOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/MessageOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "PairInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/PairInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "token": {
+            "description": "Single-use pairing token from the startup URL fragment.",
+            "minLength": 20,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "ProfileBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/ProfileBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "User-visible connection name.",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "projectId": {
+            "description": "GCP project ID; credentials are never stored.",
+            "maxLength": 30,
+            "minLength": 6,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "projectId"
+        ],
+        "type": "object"
+      },
+      "ProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/ProfileResponse.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable local connection profile ID.",
+            "type": "string"
+          },
+          "name": {
+            "description": "User-visible connection name.",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "GCP project ID.",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Cloud provider.",
+            "enum": [
+              "gcp"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "description": "Current local credential status.",
+            "enum": [
+              "ready",
+              "needs-auth"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "projectId",
+          "provider",
+          "status"
+        ],
+        "type": "object"
+      },
+      "QueryInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/QueryInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the preceding identical query.",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "end": {
+            "description": "Exclusive absolute end timestamp, no more than seven days after start.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum entries to return.",
+            "format": "int64",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Query language mode; native passes query as a GCP Logging filter fragment.",
+            "enum": [
+              "leopard",
+              "structured",
+              "native"
+            ],
+            "type": "string"
+          },
+          "predicates": {
+            "description": "Provider-neutral structured payload predicates. Only valid in structured mode; all predicates are combined with AND.",
+            "items": {
+              "$ref": "#/components/schemas/FieldPredicate"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "profileId": {
+            "description": "Connection profile ID.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search expression or native GCP filter fragment, according to mode.",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "severities": {
+            "description": "Exact normalized severities to include; WARN is accepted as WARNING.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 9,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sources": {
+            "description": "Cloud Run service names to include.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "start": {
+            "description": "Inclusive absolute start timestamp.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId",
+          "mode",
+          "start",
+          "end",
+          "limit"
+        ],
+        "type": "object"
+      },
+      "QueryOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/QueryOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "entries": {
+            "description": "Normalized log entries in descending timestamp order.",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "description": "Cursor expiry timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "nextCursor": {
+            "description": "Opaque cursor for the next page.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "RequestContextInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/RequestContextInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "eventTimestamp": {
+            "description": "Selected event timestamp at the center of the context window.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "profileId": {
+            "description": "Connection profile ID.",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Exact request ID from the selected event. At least requestId or traceId is required.",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "traceId": {
+            "description": "Exact trace resource name or trace ID from the selected event. At least requestId or traceId is required.",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId",
+          "eventTimestamp"
+        ],
+        "type": "object"
+      },
+      "RequestContextOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/RequestContextOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "entries": {
+            "description": "Matching Cloud Run revision entries across all services, in ascending timestamp order.",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "SourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Cloud Run service name; empty means all Cloud Run revision logs.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Source selector kind.",
+            "enum": [
+              "cloud-run",
+              "log"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "description": "User-visible source label.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "description": "Local pairing session",
+        "in": "cookie",
+        "name": "logleopard_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "LogLeopard API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/status": {
+      "get": {
+        "description": "Report sanitized GCP Application Default Credential availability.",
+        "operationId": "auth-status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get credential status",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/profiles": {
+      "get": {
+        "description": "List local GCP connection profiles without credentials.",
+        "operationId": "list-profiles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileResponse"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List connection profiles",
+        "tags": [
+          "LogLeopard"
+        ]
+      },
+      "post": {
+        "description": "Create a local profile containing a display name and GCP project ID.",
+        "operationId": "create-profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create connection profile",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/profiles/{id}": {
+      "delete": {
+        "description": "Delete a local connection profile; cloud resources are not changed.",
+        "operationId": "delete-profile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete connection profile",
+        "tags": [
+          "LogLeopard"
+        ]
+      },
+      "put": {
+        "description": "Replace the name and GCP project ID of a local connection profile.",
+        "operationId": "update-profile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Update connection profile",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/query": {
+      "post": {
+        "description": "Query a bounded time window of Cloud Run revision logs and return normalized entries plus an opaque cursor.",
+        "operationId": "query-logs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Query Cloud Run logs",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/request-context": {
+      "post": {
+        "description": "Find up to 200 Cloud Run revision entries across all services in the profile project, within 15 minutes before or after the selected event, by exact known request ID or trace ID locations.",
+        "operationId": "request-context",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestContextInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestContextOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get request context",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/session/logout": {
+      "post": {
+        "description": "Invalidate the current local session and expire its cookie.",
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CookieOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Log out",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/session/pair": {
+      "post": {
+        "description": "Exchange the single-use startup token for a local HttpOnly session cookie.",
+        "operationId": "pair",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CookieOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Pair browser session",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "description": "List Cloud Run services for a profile; an all-logs fallback and sanitized warning header are returned when discovery fails.",
+        "operationId": "discover-sources",
+        "parameters": [
+          {
+            "description": "Connection profile ID.",
+            "explode": false,
+            "in": "query",
+            "name": "profileId",
+            "required": true,
+            "schema": {
+              "description": "Connection profile ID.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceResponse"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-LogLeopard-Warning": {
+                "schema": {
+                  "description": "Sanitized discovery fallback warning, when discovery was incomplete.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Discover Cloud Run services",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    }
+  }
+}
