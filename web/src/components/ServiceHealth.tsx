@@ -50,7 +50,7 @@ function metricWindow(preset: HealthWindow) {
   };
 }
 
-function series(
+function healthSeriesPoints(
   data: ServiceHealthResponse | undefined,
   name: "request_count" | "server_error_count" | "request_latency_p95",
 ): HealthPoint[] {
@@ -478,9 +478,9 @@ export function ServiceHealth({
       ),
     enabled: sessionReady && Boolean(profile && service),
   });
-  const requests = series(health.data, "request_count");
-  const errors = series(health.data, "server_error_count");
-  const latencyP95 = series(health.data, "request_latency_p95");
+  const requests = healthSeriesPoints(health.data, "request_count");
+  const errors = healthSeriesPoints(health.data, "server_error_count");
+  const latencyP95 = healthSeriesPoints(health.data, "request_latency_p95");
   const totalRequests = requests.reduce((sum, point) => sum + point.value, 0);
   const totalErrors = errors.reduce((sum, point) => sum + point.value, 0);
   const peakLatencyP95 = latencyP95.length

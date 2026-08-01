@@ -86,7 +86,8 @@ export const mockClient: ApiClient = {
     const start = new Date(input.start).getTime();
     const end = new Date(input.end).getTime();
     const requiresServerError =
-      input.mode === "native" && query.trim() === "httpRequest.status >= 500";
+      input.mode === "native" &&
+      query.trim() === "httpRequest.status >= 500 AND httpRequest.status < 600";
     const filtered = fixtureEntries.filter((entry) => {
       const status = Number(
         (entry.raw as { httpRequest?: { status?: unknown } }).httpRequest

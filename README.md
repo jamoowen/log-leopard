@@ -69,7 +69,7 @@ Grant the authenticated principal these minimum project-level roles on every pro
 
 Organization policies or custom roles can require additional permissions. If ADC warns about quota, set a quota project with `gcloud auth application-default set-quota-project PROJECT_ID`; that may require `serviceusage.services.use`, included in `roles/serviceusage.serviceUsageConsumer`, on the quota project.
 
-For keyless read-only impersonation, grant the service account the two viewer roles above and grant the developer `roles/iam.serviceAccountTokenCreator` on that service account, then create impersonated ADC:
+For keyless read-only impersonation, grant the service account the three viewer roles above and grant the developer `roles/iam.serviceAccountTokenCreator` on that service account, then create impersonated ADC:
 
 ```sh
 gcloud auth application-default login \

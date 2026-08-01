@@ -31,14 +31,19 @@ func newTestServer(t *testing.T) (*Server, string) {
 	return newTestServerWithProvider(t, fake.New())
 }
 
-func newTestServerWithProvider(t *testing.T, p providerapi.Provider) (*Server, string) {
+type testProvider interface {
+	LogProvider
+	HealthProvider
+}
+
+func newTestServerWithProvider(t *testing.T, p testProvider) (*Server, string) {
 	t.Helper()
 	sessions, pairing := auth.NewManager(time.Minute, time.Hour)
 	cursors := cursor.New(time.Minute)
 	s, err := New(Config{
 		Host: "127.0.0.1:8787", Origin: testOrigin,
 		Profiles: profile.NewStore(filepath.Join(t.TempDir(), "connections.json")),
-		Provider: p, Sessions: sessions, Cursors: cursors,
+		Provider: p, HealthProvider: p, Sessions: sessions, Cursors: cursors,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {

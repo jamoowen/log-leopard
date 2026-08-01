@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -117,11 +116,4 @@ type ServiceHealthResult struct {
 	End       time.Time
 	Alignment time.Duration
 	Series    []HealthSeries
-}
-
-type Provider interface {
-	ADCStatus(context.Context) (bool, string)
-	Discover(context.Context, string) Discovery
-	Query(context.Context, QueryRequest) (QueryResult, error)
-	ServiceHealth(context.Context, ServiceHealthRequest) (ServiceHealthResult, error)
 }

@@ -64,7 +64,7 @@ test("service health drills into the exact log interval", async ({
     page.getByRole("button", { name: "Logs", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("textbox", { name: "Query" })).toHaveValue(
-    "httpRequest.status >= 500",
+    "httpRequest.status >= 500 AND httpRequest.status < 600",
   );
   await expect(page.getByRole("button", { name: "Custom" })).toHaveAttribute(
     "aria-pressed",

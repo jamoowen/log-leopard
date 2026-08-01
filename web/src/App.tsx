@@ -384,7 +384,7 @@ function App() {
     const request: QueryRequest = {
       profileId: activeProfile.id,
       mode: "native",
-      query: "httpRequest.status >= 500",
+      query: "httpRequest.status >= 500 AND httpRequest.status < 600",
       sources: [service],
       severities: [],
       start,

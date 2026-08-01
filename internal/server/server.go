@@ -23,13 +23,24 @@ import (
 )
 
 type Config struct {
-	Host     string
-	Origin   string
-	Profiles *profile.Store
-	Provider provider.Provider
-	Sessions *auth.Manager
-	Cursors  *cursor.Signer
-	Logger   *slog.Logger
+	Host           string
+	Origin         string
+	Profiles       *profile.Store
+	Provider       LogProvider
+	HealthProvider HealthProvider
+	Sessions       *auth.Manager
+	Cursors        *cursor.Signer
+	Logger         *slog.Logger
+}
+
+type LogProvider interface {
+	ADCStatus(context.Context) (bool, string)
+	Discover(context.Context, string) provider.Discovery
+	Query(context.Context, provider.QueryRequest) (provider.QueryResult, error)
+}
+
+type HealthProvider interface {
+	ServiceHealth(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
 }
 
 type Server struct {
@@ -45,7 +56,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Origin != "http://"+cfg.Host && cfg.Origin != "https://"+cfg.Host {
 		return nil, errors.New("origin must exactly match the listening host")
 	}
-	if cfg.Profiles == nil || cfg.Provider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
+	if cfg.Profiles == nil || cfg.Provider == nil || cfg.HealthProvider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
 		return nil, errors.New("server dependencies are required")
 	}
 	if cfg.Logger == nil {
@@ -412,7 +423,7 @@ func (s *Server) serviceHealth(ctx context.Context, input *serviceHealthInput) (
 		return nil, huma.Error400BadRequest("time window cannot exceed seven days")
 	}
 	alignment := healthAlignment(window)
-	result, err := s.cfg.Provider.ServiceHealth(ctx, provider.ServiceHealthRequest{
+	result, err := s.cfg.HealthProvider.ServiceHealth(ctx, provider.ServiceHealthRequest{
 		ProjectID: p.ProjectID, Service: input.Body.Service, Start: input.Body.Start, End: input.Body.End, Alignment: alignment,
 	})
 	if err != nil {
