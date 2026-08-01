@@ -181,10 +181,12 @@ func TestNormalizeSlogSeverityAndRequestMetadata(t *testing.T) {
 	}
 }
 
-func TestNormalizeGeneratesStableIDWhenInsertIDIsMissing(t *testing.T) {
+func TestNormalizeGeneratesStableCollisionSafeID(t *testing.T) {
 	item := &loggingpb.LogEntry{
+		InsertId:  "shared-insert-id",
+		LogName:   "projects/synthetic/logs/stdout",
 		Timestamp: timestamppb.New(time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)),
-		Payload:   &loggingpb.LogEntry_TextPayload{TextPayload: "message without an insert ID"},
+		Payload:   &loggingpb.LogEntry_TextPayload{TextPayload: "message"},
 	}
 
 	first, _, err := normalize(item)
@@ -195,7 +197,36 @@ func TestNormalizeGeneratesStableIDWhenInsertIDIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.ID == "" || first.ID != second.ID || !strings.HasPrefix(first.ID, "generated-") {
+	if first.ID == "" || first.ID != second.ID || !strings.HasPrefix(first.ID, "gcp-") {
 		t.Fatalf("expected a stable generated ID, got %q and %q", first.ID, second.ID)
+	}
+	item.LogName = "projects/synthetic/logs/stderr"
+	collision, _, err := normalize(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collision.ID == first.ID {
+		t.Fatal("entries with the same insert ID but different log names collided")
+	}
+}
+
+func TestNormalizeOmitsMissingReceiveTimestamp(t *testing.T) {
+	entry, _, err := normalize(&loggingpb.LogEntry{
+		Timestamp: timestamppb.New(time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)),
+		Payload:   &loggingpb.LogEntry_TextPayload{TextPayload: "message"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := object["receiveTimestamp"]; exists {
+		t.Fatalf("missing receive timestamp was serialized: %s", encoded)
 	}
 }

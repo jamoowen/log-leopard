@@ -26,7 +26,7 @@
 
 ## Go
 
-- Use idiomatic Go 1.26, `context.Context`, `log/slog`, and standard library facilities where practical.
+- Use idiomatic Go 1.26.5+, `context.Context`, `log/slog`, and standard library facilities where practical.
 - Keep handlers thin and errors explicit. Wrap errors with context and expose sanitized problem responses.
 - Define interfaces where consumed. Prefer concrete types until an interface is needed for provider tests.
 - Keep `golangci-lint` at v2.10.1 locally to match CI. Do not add development tools to the application module graph.

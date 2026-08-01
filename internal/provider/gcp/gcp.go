@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	logging "cloud.google.com/go/logging/apiv2"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
@@ -195,19 +196,20 @@ func normalize(item *loggingpb.LogEntry) (provider.Entry, int, error) {
 	}
 	requestID, _ := firstString(structured,
 		[]string{"requestId"}, []string{"request_id"}, []string{"request", "id"}, []string{"httpRequest", "requestId"})
-	id := item.GetInsertId()
-	if id == "" {
-		sum := sha256.Sum256(raw)
-		id = fmt.Sprintf("generated-%x", sum[:12])
-	}
+	sum := sha256.Sum256(raw)
+	id := fmt.Sprintf("gcp-%x", sum[:16])
 	labels := item.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}
 	}
+	receiveTimestamp := time.Time{}
+	if timestamp := item.GetReceiveTimestamp(); timestamp != nil {
+		receiveTimestamp = timestamp.AsTime()
+	}
 	return provider.Entry{
 		ID:               id,
 		Timestamp:        item.GetTimestamp().AsTime(),
-		ReceiveTimestamp: item.GetReceiveTimestamp().AsTime(),
+		ReceiveTimestamp: receiveTimestamp,
 		Severity:         severity,
 		SeverityOriginal: severityOriginal,
 		Message:          message,

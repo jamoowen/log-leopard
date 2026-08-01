@@ -81,8 +81,22 @@ const httpClient: ApiClient = {
     }),
 };
 
-export const api =
-  new URLSearchParams(window.location.search).get("mock") === "1" ||
-  import.meta.env.VITE_MOCK_API === "true"
-    ? mockClient
-    : httpClient;
+export function shouldUseMockApi(
+  search: string,
+  environmentEnabled: string | undefined,
+  development: boolean,
+) {
+  return (
+    development &&
+    (new URLSearchParams(search).get("mock") === "1" ||
+      environmentEnabled === "true")
+  );
+}
+
+export const api = shouldUseMockApi(
+  window.location.search,
+  import.meta.env.VITE_MOCK_API,
+  import.meta.env.DEV,
+)
+  ? mockClient
+  : httpClient;

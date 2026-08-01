@@ -20,6 +20,7 @@ describe("preference persistence", () => {
       ...defaults,
       theme: "light",
       sources: ["api"],
+      queryDraftsEnabled: true,
       drafts: { ...defaults.drafts, leopard: "severity:error" },
     });
     expect(loadPreferences()).toMatchObject({
@@ -32,6 +33,20 @@ describe("preference persistence", () => {
     );
   });
 
+  it("does not persist query drafts without explicit opt-in", () => {
+    savePreferences({
+      ...defaults,
+      drafts: { ...defaults.drafts, leopard: "customer-secret" },
+      predicateDrafts: [
+        { id: "one", path: "customer.id", operator: "equals", value: "42" },
+      ],
+    });
+    const stored = localStorage.getItem("logleopard.preferences.v1") ?? "";
+    expect(stored).not.toContain("customer-secret");
+    expect(stored).not.toContain("customer.id");
+    expect(loadPreferences().drafts).toEqual(defaults.drafts);
+  });
+
   it("deduplicates and bounds history and can clear it", () => {
     for (let index = 0; index < 55; index++) addHistory(`query-${index}`);
     addHistory("query-54");
@@ -41,10 +56,14 @@ describe("preference persistence", () => {
     expect(loadHistory()).toEqual([]);
   });
 
-  it("preserves old per-mode drafts while adding new defaults", () => {
+  it("restores query drafts only after explicit opt-in", () => {
     localStorage.setItem(
       "logleopard.preferences.v1",
-      JSON.stringify({ drafts: { leopard: "old query" }, theme: "light" }),
+      JSON.stringify({
+        drafts: { leopard: "old query" },
+        queryDraftsEnabled: true,
+        theme: "light",
+      }),
     );
     expect(loadPreferences().drafts).toEqual({
       leopard: "old query",
@@ -54,6 +73,24 @@ describe("preference persistence", () => {
     expect(loadPreferences().predicateDrafts).toEqual([]);
   });
 
+  it("clears query data saved under the legacy default-on policy", () => {
+    localStorage.setItem(
+      "logleopard.preferences.v1",
+      JSON.stringify({ historyEnabled: true, localRecipesEnabled: true }),
+    );
+    localStorage.setItem("logleopard.history.v1", JSON.stringify(["secret"]));
+    localStorage.setItem(
+      "logleopard.saved-queries.v1",
+      JSON.stringify([{ name: "secret" }]),
+    );
+
+    const preferences = loadPreferences();
+    expect(preferences.historyEnabled).toBe(false);
+    expect(preferences.localRecipesEnabled).toBe(false);
+    expect(loadHistory()).toEqual([]);
+    expect(loadSavedQueries()).toEqual([]);
+  });
+
   it("sanitizes every preference member from hostile storage", () => {
     localStorage.setItem(
       "logleopard.preferences.v1",
@@ -61,7 +98,6 @@ describe("preference persistence", () => {
         theme: [],
         timezone: "elsewhere",
         display: null,
-        pageMode: false,
         profileId: 4,
         sources: ["api", null, "api", ""],
         severities: ["ERROR", "NOPE", {}],
@@ -75,7 +111,7 @@ describe("preference persistence", () => {
         ],
         historyEnabled: "yes",
         localRecipesEnabled: 1,
-        localDataDisclosureSeen: null,
+        queryDraftsEnabled: "yes",
         polling: 1,
       }),
     );
@@ -83,10 +119,8 @@ describe("preference persistence", () => {
       ...defaults,
       sources: ["api"],
       severities: ["ERROR"],
-      drafts: { ...defaults.drafts, structured: "kept" },
-      predicateDrafts: [
-        { id: "ok", path: "request.id", operator: "equals", value: "x" },
-      ],
+      drafts: defaults.drafts,
+      predicateDrafts: [],
     });
   });
 
@@ -94,6 +128,7 @@ describe("preference persistence", () => {
     localStorage.setItem(
       "logleopard.preferences.v1",
       JSON.stringify({
+        queryDraftsEnabled: true,
         predicateDrafts: [
           { id: "same", path: "one", operator: "equals", value: "1" },
           { id: "same", path: "two", operator: "equals", value: "2" },

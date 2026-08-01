@@ -138,17 +138,11 @@ kbd {
   font-size: 11px;
 }
 .brand-mark {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--accent);
-  transform: skew(-9deg);
-  display: grid;
-  place-items: center;
-}
-.brand-mark span {
-  width: 3px;
-  height: 3px;
-  background: var(--accent);
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-bright);
+  border-radius: 5px;
+  object-fit: cover;
 }
 .edition {
   color: var(--faint);

@@ -1,5 +1,6 @@
 import {
   toPredicate,
+  validateCustomRange,
   validatePredicate,
   type PredicateDraft,
 } from "./query-tools";
@@ -10,6 +11,24 @@ const draft = (patch: Partial<PredicateDraft>): PredicateDraft => ({
   operator: "equals",
   value: "value",
   ...patch,
+});
+
+describe("custom time ranges", () => {
+  it("requires two valid, increasing timestamps within seven days", () => {
+    expect(validateCustomRange("", "2026-08-01T10:00")).toContain("both");
+    expect(validateCustomRange("invalid", "2026-08-01T10:00")).toContain(
+      "valid",
+    );
+    expect(
+      validateCustomRange("2026-08-01T11:00", "2026-08-01T10:00"),
+    ).toContain("before");
+    expect(
+      validateCustomRange("2026-07-01T10:00", "2026-08-01T10:00"),
+    ).toContain("7 day");
+    expect(
+      validateCustomRange("2026-08-01T09:00", "2026-08-01T10:00"),
+    ).toBeNull();
+  });
 });
 
 describe("structured predicates", () => {
@@ -34,5 +53,10 @@ describe("structured predicates", () => {
     expect(
       validatePredicate(draft({ operator: "lt", value: "nope" })),
     ).toBeTruthy();
+  });
+  it("normalizes full jsonPayload paths and quoted string values", () => {
+    expect(
+      toPredicate(draft({ path: "jsonPayload.level", value: '"INFO"' })),
+    ).toMatchObject({ path: "level", value: "INFO" });
   });
 });

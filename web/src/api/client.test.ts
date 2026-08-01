@@ -1,5 +1,13 @@
 import { ApiError } from "./types";
-import { requestSourceDiscovery } from "./client";
+import { requestSourceDiscovery, shouldUseMockApi } from "./client";
+
+describe("mock API selection", () => {
+  it("allows explicit mocks only in development builds", () => {
+    expect(shouldUseMockApi("?mock=1", undefined, true)).toBe(true);
+    expect(shouldUseMockApi("", "true", true)).toBe(true);
+    expect(shouldUseMockApi("?mock=1", "true", false)).toBe(false);
+  });
+});
 
 describe("source discovery client", () => {
   afterEach(() => vi.restoreAllMocks());

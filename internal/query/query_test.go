@@ -11,7 +11,7 @@ func TestCompileStructuredPredicates(t *testing.T) {
 	filter, err := Compile(CompileInput{
 		Sources: []string{"api"}, Severities: []string{"error"}, Start: start, End: start.Add(time.Hour),
 		Predicates: []FieldPredicate{
-			{Path: "request.id", Operator: "equals", Value: `req-"quoted"`},
+			{Path: "jsonPayload.request.id", Operator: "equals", Value: `req-"quoted"`},
 			{Path: "message", Operator: "contains", Value: "timeout"},
 			{Path: "retryable", Operator: "exists", Value: false},
 			{Path: "duration_ms", Operator: "gt", Value: float64(100)},
@@ -39,7 +39,6 @@ func TestCompileRejectsMalformedStructuredPredicates(t *testing.T) {
 	tests := []FieldPredicate{
 		{Path: "", Operator: "equals", Value: "x"},
 		{Path: "request..id", Operator: "equals", Value: "x"},
-		{Path: "jsonPayload.requestId", Operator: "equals", Value: "x"},
 		{Path: "request/id", Operator: "equals", Value: "x"},
 		{Path: "request.id", Operator: "unknown", Value: "x"},
 		{Path: "request.id", Operator: "contains", Value: true},
@@ -59,6 +58,21 @@ func TestCompileRejectsMalformedStructuredPredicates(t *testing.T) {
 	}
 	if _, err := Compile(CompileInput{Predicates: tooMany, Start: now, End: now.Add(time.Hour)}); err == nil {
 		t.Fatalf("accepted more than %d predicates", MaxPredicates)
+	}
+}
+
+func TestStructuredPathAcceptsJsonPayloadPrefix(t *testing.T) {
+	now := time.Now()
+	filter, err := Compile(CompileInput{
+		Predicates: []FieldPredicate{{Path: "jsonPayload.level", Operator: "equals", Value: "INFO"}},
+		Start:      now,
+		End:        now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(filter, `jsonPayload.level = "INFO"`) {
+		t.Fatalf("prefixed structured path compiled incorrectly: %s", filter)
 	}
 }
 
@@ -156,6 +170,22 @@ func TestQuotedAndImplicitAND(t *testing.T) {
 		if !strings.Contains(filter, want) {
 			t.Fatalf("mixed quoted token was not treated as a field search; missing %q: %s", want, filter)
 		}
+	}
+}
+
+func TestTextQueriesUseOnlyScalarPayloadFields(t *testing.T) {
+	now := time.Now()
+	filter, err := Compile(CompileInput{Text: `starting "worker ready" message:booting`, Start: now, End: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"jsonPayload.message", "jsonPayload.msg", "textPayload"} {
+		if !strings.Contains(filter, field) {
+			t.Fatalf("text filter missing %s: %s", field, filter)
+		}
+	}
+	if strings.Contains(filter, "protoPayload:") {
+		t.Fatalf("text filter compares the protoPayload object as a scalar: %s", filter)
 	}
 }
 

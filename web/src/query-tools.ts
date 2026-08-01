@@ -11,13 +11,20 @@ export interface PredicateDraft {
 const pathPattern = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const blockedPathParts = new Set(["__proto__", "prototype", "constructor"]);
 
+export function normalizePredicatePath(value: string) {
+  const path = value.trim();
+  return path.startsWith("jsonPayload.")
+    ? path.slice("jsonPayload.".length)
+    : path;
+}
+
 export function validatePredicate(draft: PredicateDraft): string | null {
-  const path = draft.path.trim();
+  const path = normalizePredicatePath(draft.path);
   if (
     !pathPattern.test(path) ||
     path.split(".").some((part) => blockedPathParts.has(part))
   )
-    return "Use a safe dot path with letters, digits, and underscores.";
+    return "Use a safe path like level or jsonPayload.level.";
   if (draft.operator === "exists")
     return draft.value === "true" || draft.value === "false"
       ? null
@@ -39,6 +46,16 @@ function parseEquals(value: string): {
 } {
   const clean = value.trim();
   if (!clean) return { valid: false, value: "" };
+  if (clean.startsWith('"') || clean.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(clean);
+      return typeof parsed === "string"
+        ? { valid: true, value: parsed }
+        : { valid: false, value: "" };
+    } catch {
+      return { valid: false, value: "" };
+    }
+  }
   if (clean === "true" || clean === "false")
     return { valid: true, value: clean === "true" };
   if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(clean) && Number.isFinite(Number(clean)))
@@ -50,24 +67,24 @@ export function toPredicate(draft: PredicateDraft): FieldPredicate | null {
   if (validatePredicate(draft)) return null;
   if (draft.operator === "exists")
     return {
-      path: draft.path.trim(),
+      path: normalizePredicatePath(draft.path),
       operator: draft.operator,
       value: draft.value === "true",
     };
   if (draft.operator === "gt" || draft.operator === "lt")
     return {
-      path: draft.path.trim(),
+      path: normalizePredicatePath(draft.path),
       operator: draft.operator,
       value: Number(draft.value),
     };
   if (draft.operator === "equals")
     return {
-      path: draft.path.trim(),
+      path: normalizePredicatePath(draft.path),
       operator: draft.operator,
       value: parseEquals(draft.value).value,
     };
   return {
-    path: draft.path.trim(),
+    path: normalizePredicatePath(draft.path),
     operator: draft.operator,
     value: draft.value,
   };
@@ -87,4 +104,16 @@ export function predicateToDraft(
 
 export function modeQuery(mode: QueryMode, drafts: Record<QueryMode, string>) {
   return mode === "structured" ? undefined : drafts[mode];
+}
+
+export function validateCustomRange(start: string, end: string) {
+  if (!start || !end) return "Choose both a start and end time";
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime))
+    return "Enter valid start and end times";
+  if (startTime >= endTime) return "Start time must be before end time";
+  if (endTime - startTime > 604_800_000)
+    return "Range exceeds the 7 day maximum";
+  return null;
 }

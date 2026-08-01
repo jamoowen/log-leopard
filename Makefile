@@ -1,4 +1,4 @@
-.PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run-fake
+.PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake
 
 build:
 	go build ./cmd/log-leopard
@@ -10,10 +10,10 @@ build-production: web-build
 	go build -tags production -o log-leopard ./cmd/log-leopard
 
 dev:
-	sh ./scripts/dev.sh
+	LOG_LEOPARD_BROWSER="$(BROWSER)" sh ./scripts/dev.sh
 
 dev-fake:
-	sh ./scripts/dev.sh -fake
+	LOG_LEOPARD_BROWSER="$(BROWSER)" sh ./scripts/dev.sh -fake
 
 web-dev:
 	pnpm --dir web exec vite --config "$(CURDIR)/vite.dev.config.mjs"
@@ -44,6 +44,8 @@ web-check:
 	pnpm --dir web run typecheck
 	pnpm --dir web run test
 	pnpm --dir web run build
+	go test -tags production ./...
+	go -C web test -tags production .
 
 check: fmt-check lint-go vet test web-check api-check
 
@@ -59,5 +61,8 @@ api-check:
 		diff -u openapi.json "$$tmp" && \
 		pnpm --dir web run check:api
 
-run-fake:
-	go run ./cmd/log-leopard -fake
+run: web-build
+	go run -tags production ./cmd/log-leopard
+
+run-fake: web-build
+	go run -tags production ./cmd/log-leopard -fake

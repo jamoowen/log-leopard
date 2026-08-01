@@ -35,17 +35,20 @@ func TestMakePairingURL(t *testing.T) {
 func TestBrowserCommandUsesURLAsAnArgument(t *testing.T) {
 	url := `http://127.0.0.1:8787/#pair=token&x=$(unsafe);still-one-argument`
 	tests := []struct {
-		goos string
-		name string
-		args []string
+		goos    string
+		browser string
+		name    string
+		args    []string
 	}{
-		{goos: "darwin", name: "open", args: []string{url}},
-		{goos: "linux", name: "xdg-open", args: []string{url}},
-		{goos: "windows", name: "rundll32", args: []string{"url.dll,FileProtocolHandler", url}},
+		{goos: "darwin", browser: "default", name: "open", args: []string{url}},
+		{goos: "darwin", browser: "brave", name: "open", args: []string{"-a", "Brave Browser", url}},
+		{goos: "linux", browser: "default", name: "xdg-open", args: []string{url}},
+		{goos: "linux", browser: "brave", name: "brave-browser", args: []string{url}},
+		{goos: "windows", browser: "default", name: "rundll32", args: []string{"url.dll,FileProtocolHandler", url}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.goos, func(t *testing.T) {
-			name, args, err := browserCommand(tt.goos, url)
+			name, args, err := browserCommand(tt.goos, tt.browser, url)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -54,7 +57,10 @@ func TestBrowserCommandUsesURLAsAnArgument(t *testing.T) {
 			}
 		})
 	}
-	if _, _, err := browserCommand("plan9", url); err == nil {
+	if _, _, err := browserCommand("plan9", "brave", url); err == nil {
 		t.Fatal("unsupported platform was accepted")
+	}
+	if _, _, err := browserCommand("darwin", "unknown", url); err == nil {
+		t.Fatal("unknown browser was accepted")
 	}
 }

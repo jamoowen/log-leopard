@@ -44,7 +44,7 @@ type HTTPRequest struct {
 }
 
 type Entry struct {
-	ID               string            `json:"id" doc:"Provider insert ID, when present."`
+	ID               string            `json:"id" doc:"Stable provider-derived identity for this exact log entry."`
 	Timestamp        time.Time         `json:"timestamp" doc:"Event timestamp."`
 	ReceiveTimestamp time.Time         `json:"receiveTimestamp,omitzero" doc:"Cloud Logging receive timestamp."`
 	Severity         string            `json:"severity" doc:"Normalized GCP severity name."`

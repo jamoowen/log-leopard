@@ -23,6 +23,17 @@ test("desktop query and inspector workflow", async ({ page }, testInfo) => {
   await expect(page.getByTestId("json-text")).toContainText("insertId");
 });
 
+test("load more appends the next result page", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("80 entries loaded")).toBeVisible();
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByText("140 entries loaded")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more" })).toBeHidden();
+});
+
 test("identical custom requests refetch and polling does not lock execution", async ({
   page,
 }, testInfo) => {
@@ -157,6 +168,7 @@ test("structured builder, field tools, context, recipes, and commands work toget
 
   await page.getByLabel("Close inspector").click();
   await page.getByLabel("Saved queries").click();
+  await page.getByLabel("Enable local recipe storage").check();
   await page.getByLabel("Saved query name").fill("Slow requests");
   await page.getByRole("button", { name: "Save current" }).click();
   await expect(page.getByText("Slow requests", { exact: true })).toBeVisible();

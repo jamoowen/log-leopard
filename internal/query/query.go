@@ -17,7 +17,7 @@ const (
 )
 
 type FieldPredicate struct {
-	Path     string `json:"path" maxLength:"256" doc:"Dot-separated jsonPayload path. Each segment must start with a letter or underscore and contain only letters, digits, and underscores."`
+	Path     string `json:"path" maxLength:"256" doc:"Dot-separated structured payload path, optionally prefixed with jsonPayload. Each segment must start with a letter or underscore and contain only letters, digits, and underscores."`
 	Operator string `json:"operator" enum:"equals,contains,exists,gt,lt" doc:"Exact structured-field comparison operator."`
 	Value    any    `json:"value" doc:"Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt."`
 }
@@ -109,22 +109,21 @@ func Compile(in CompileInput) (string, error) {
 var pathSegmentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func compilePredicate(predicate FieldPredicate) (string, error) {
-	if predicate.Path == "" || len(predicate.Path) > 256 {
+	path := strings.TrimSpace(predicate.Path)
+	path = strings.TrimPrefix(path, "jsonPayload.")
+	if path == "" || path == "jsonPayload" || len(path) > 256 {
 		return "", errors.New("path must contain 1 to 256 characters")
 	}
-	parts := strings.Split(predicate.Path, ".")
+	parts := strings.Split(path, ".")
 	if len(parts) > 20 {
 		return "", errors.New("path cannot contain more than 20 segments")
-	}
-	if parts[0] == "jsonPayload" {
-		return "", errors.New("path is relative to the structured payload and must not include jsonPayload")
 	}
 	for _, part := range parts {
 		if !pathSegmentPattern.MatchString(part) {
 			return "", errors.New("path contains an invalid segment")
 		}
 	}
-	field := "jsonPayload." + predicate.Path
+	field := "jsonPayload." + path
 	switch predicate.Operator {
 	case "equals":
 		value, err := scalar(predicate.Value)
@@ -320,7 +319,7 @@ func (t token) compile() (string, error) {
 	value := t.value
 	if t.quoted {
 		q := quote(value)
-		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + ` OR protoPayload:` + q + `)`, nil
+		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`, nil
 	}
 	negated := strings.HasPrefix(value, "-")
 	if negated {
@@ -339,7 +338,7 @@ func (t token) compile() (string, error) {
 	var result string
 	if !hasField {
 		q := quote(value)
-		result = `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + ` OR protoPayload:` + q + `)`
+		result = `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`
 	} else {
 		compiled, err := compileField(field, val)
 		if err != nil {
@@ -357,7 +356,7 @@ func compileField(field, value string) (string, error) {
 	q := quote(value)
 	switch strings.ToLower(field) {
 	case "message", "msg":
-		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + ` OR protoPayload:` + q + `)`, nil
+		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`, nil
 	case "service", "source":
 		return `(resource.labels.service_name = ` + q + ` OR jsonPayload.service = ` + q + ` OR jsonPayload.service_name = ` + q + ` OR jsonPayload.service.name = ` + q + `)`, nil
 	case "severity", "level":

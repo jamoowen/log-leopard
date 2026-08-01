@@ -46,7 +46,6 @@ export interface Preferences {
   theme: "dark" | "light";
   timezone: "local" | "utc";
   display: "compact" | "structured" | "raw";
-  pageMode: "paged" | "infinite";
   profileId: string;
   sources: string[];
   severities: Severity[];
@@ -54,9 +53,9 @@ export interface Preferences {
   queryMode: QueryMode;
   drafts: Record<QueryMode, string>;
   predicateDrafts: PredicateDraft[];
+  queryDraftsEnabled: boolean;
   historyEnabled: boolean;
   localRecipesEnabled: boolean;
-  localDataDisclosureSeen: boolean;
   polling: PollInterval;
 }
 
@@ -64,7 +63,6 @@ export const defaults: Preferences = {
   theme: "dark",
   timezone: "local",
   display: "compact",
-  pageMode: "infinite",
   profileId: "",
   sources: [],
   severities: [],
@@ -76,9 +74,9 @@ export const defaults: Preferences = {
     native: "severity >= ERROR",
   },
   predicateDrafts: [],
-  historyEnabled: true,
-  localRecipesEnabled: true,
-  localDataDisclosureSeen: false,
+  queryDraftsEnabled: false,
+  historyEnabled: false,
+  localRecipesEnabled: false,
   polling: 0,
 };
 
@@ -224,6 +222,13 @@ export function loadPreferences(storage: Storage = localStorage): Preferences {
     const parsed: unknown = JSON.parse(storage.getItem(KEY) ?? "{}");
     const stored = isPlainObject(parsed) ? parsed : {};
     const drafts = isPlainObject(stored.drafts) ? stored.drafts : {};
+    const privacyControlsConfigured =
+      typeof stored.queryDraftsEnabled === "boolean";
+    if (!privacyControlsConfigured) {
+      safeRemove(storage, HISTORY_KEY);
+      safeRemove(storage, SAVED_KEY);
+    }
+    const queryDraftsEnabled = stored.queryDraftsEnabled === true;
     return {
       theme: enumValue(stored.theme, ["dark", "light"], defaults.theme),
       timezone: enumValue(stored.timezone, ["local", "utc"], defaults.timezone),
@@ -231,11 +236,6 @@ export function loadPreferences(storage: Storage = localStorage): Preferences {
         stored.display,
         ["compact", "structured", "raw"],
         defaults.display,
-      ),
-      pageMode: enumValue(
-        stored.pageMode,
-        ["paged", "infinite"],
-        defaults.pageMode,
       ),
       profileId:
         typeof stored.profileId === "string"
@@ -248,33 +248,35 @@ export function loadPreferences(storage: Storage = localStorage): Preferences {
           ? stored.preset
           : defaults.preset,
       queryMode: enumValue(stored.queryMode, queryModes, defaults.queryMode),
-      drafts: {
-        leopard:
-          typeof drafts.leopard === "string"
-            ? drafts.leopard
-            : defaults.drafts.leopard,
-        structured:
-          typeof drafts.structured === "string"
-            ? drafts.structured
-            : defaults.drafts.structured,
-        native:
-          typeof drafts.native === "string"
-            ? drafts.native
-            : defaults.drafts.native,
-      },
-      predicateDrafts: sanitizePredicateDrafts(stored.predicateDrafts),
+      drafts: queryDraftsEnabled
+        ? {
+            leopard:
+              typeof drafts.leopard === "string"
+                ? drafts.leopard
+                : defaults.drafts.leopard,
+            structured:
+              typeof drafts.structured === "string"
+                ? drafts.structured
+                : defaults.drafts.structured,
+            native:
+              typeof drafts.native === "string"
+                ? drafts.native
+                : defaults.drafts.native,
+          }
+        : defaults.drafts,
+      predicateDrafts: queryDraftsEnabled
+        ? sanitizePredicateDrafts(stored.predicateDrafts)
+        : [],
+      queryDraftsEnabled,
       historyEnabled:
-        typeof stored.historyEnabled === "boolean"
+        privacyControlsConfigured && typeof stored.historyEnabled === "boolean"
           ? stored.historyEnabled
           : defaults.historyEnabled,
       localRecipesEnabled:
+        privacyControlsConfigured &&
         typeof stored.localRecipesEnabled === "boolean"
           ? stored.localRecipesEnabled
           : defaults.localRecipesEnabled,
-      localDataDisclosureSeen:
-        typeof stored.localDataDisclosureSeen === "boolean"
-          ? stored.localDataDisclosureSeen
-          : defaults.localDataDisclosureSeen,
       polling:
         typeof stored.polling === "number" &&
         [0, 5, 10, 30].includes(stored.polling)
@@ -290,7 +292,14 @@ export function savePreferences(
   value: Preferences,
   storage: Storage = localStorage,
 ) {
-  safeSet(storage, KEY, value);
+  if (value.queryDraftsEnabled) {
+    safeSet(storage, KEY, value);
+    return;
+  }
+  const safe: Partial<Preferences> = { ...value };
+  delete safe.drafts;
+  delete safe.predicateDrafts;
+  safeSet(storage, KEY, safe);
 }
 
 export function loadHistory(storage: Storage = localStorage): string[] {

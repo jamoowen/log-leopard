@@ -43,6 +43,7 @@ import {
   addHistory,
   clearHistory,
   clearSavedQueries,
+  defaults,
   loadFieldPins,
   loadHistory,
   loadPreferences,
@@ -58,6 +59,7 @@ import { compactValue, discoverFields, valueAtPath } from "./field-browser";
 import {
   predicateToDraft,
   toPredicate,
+  validateCustomRange,
   type PredicateOperator,
 } from "./query-tools";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -120,8 +122,12 @@ function App() {
   const [customOpen, setCustomOpen] = useState(false);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [history, setHistory] = useState(loadHistory);
-  const [saved, setSaved] = useState(loadSavedQueries);
+  const [history, setHistory] = useState(() =>
+    prefs.historyEnabled ? loadHistory() : [],
+  );
+  const [saved, setSaved] = useState(() =>
+    prefs.localRecipesEnabled ? loadSavedQueries() : [],
+  );
   const [savedOpen, setSavedOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -147,6 +153,8 @@ function App() {
   }
   useEffect(() => {
     savePreferences(prefs);
+    if (!prefs.historyEnabled) clearHistory();
+    if (!prefs.localRecipesEnabled) clearSavedQueries();
     document.documentElement.dataset.theme = prefs.theme;
   }, [prefs]);
   useEffect(() => {
@@ -270,12 +278,10 @@ function App() {
     (source) => source.id.trim() === "",
   );
   const selectedSources = prefs.sources.filter(Boolean);
-  const customRangeInvalid = Boolean(
-    customStart &&
-      customEnd &&
-      new Date(customEnd).getTime() - new Date(customStart).getTime() >
-        604_800_000,
-  );
+  const customRangeError = customOpen
+    ? validateCustomRange(customStart, customEnd)
+    : null;
+  const customRangeInvalid = customRangeError !== null;
   const predicates = prefs.predicateDrafts.map(toPredicate);
   const predicatesValid = predicates.every(Boolean) && predicates.length <= 50;
 
@@ -317,6 +323,7 @@ function App() {
       !activeProfile ||
       !sessionReady ||
       inFlightRef.current ||
+      customRangeInvalid ||
       (prefs.queryMode === "structured" && !predicatesValid)
     )
       return;
@@ -328,7 +335,6 @@ function App() {
       useCustom && customStart
         ? new Date(customStart)
         : new Date(end.getTime() - preset.ms);
-    if (end.getTime() - start.getTime() > 604_800_000) return;
     const request: QueryRequest = {
       profileId: activeProfile.id,
       mode: prefs.queryMode,
@@ -336,7 +342,7 @@ function App() {
       severities: prefs.severities,
       start: start.toISOString(),
       end: end.toISOString(),
-      limit: prefs.pageMode === "paged" ? 50 : 80,
+      limit: 80,
       ...(prefs.queryMode === "structured"
         ? { predicates: predicates as NonNullable<QueryRequest["predicates"]> }
         : { query: prefs.drafts[prefs.queryMode] }),
@@ -562,9 +568,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">
-            <span />
-          </span>
+          <img className="brand-mark" src="/log-leopard.png" alt="" />
           <strong>LOGLEOPARD</strong>
           <span className="edition">LOCAL</span>
         </div>
@@ -810,9 +814,7 @@ function App() {
                     />
                   </label>
                   <small className={customRangeInvalid ? "range-error" : ""}>
-                    {customRangeInvalid
-                      ? "Range exceeds the 7 day maximum"
-                      : "Maximum range: 7 days"}
+                    {customRangeError ?? "Maximum range: 7 days"}
                   </small>
                 </div>
               )}
@@ -960,30 +962,6 @@ function App() {
               >
                 {prefs.timezone.toUpperCase()}
               </button>
-              <Select.Root
-                value={prefs.pageMode}
-                onValueChange={(value: Preferences["pageMode"]) =>
-                  update({ pageMode: value })
-                }
-              >
-                <Select.Trigger
-                  className="text-button"
-                  aria-label="Pagination mode"
-                >
-                  <Select.Value />
-                  <ChevronDown size={12} />
-                </Select.Trigger>
-                <Select.Portal>
-                  <Select.Content className="select-content" position="popper">
-                    <Select.Item className="select-item" value="infinite">
-                      <Select.ItemText>Infinite</Select.ItemText>
-                    </Select.Item>
-                    <Select.Item className="select-item" value="paged">
-                      <Select.ItemText>One page</Select.ItemText>
-                    </Select.Item>
-                  </Select.Content>
-                </Select.Portal>
-              </Select.Root>
               <button
                 className="icon-button"
                 title="Saved queries"
@@ -1027,19 +1005,22 @@ function App() {
               <p className="privacy-note">
                 Recipes are stored in this browser and may contain sensitive
                 query text, source names, and field values. Results are never
-                stored. Disabling recipe storage does not remove current query
-                drafts used for session restoration.
+                stored. Draft restoration is controlled separately under query
+                history.
               </p>
               <label className="storage-toggle">
                 <input
                   type="checkbox"
                   checked={prefs.localRecipesEnabled}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    if (!event.target.checked) {
+                      clearSavedQueries();
+                      setSaved([]);
+                    }
                     update({
                       localRecipesEnabled: event.target.checked,
-                      localDataDisclosureSeen: true,
-                    })
-                  }
+                    });
+                  }}
                 />{" "}
                 Enable local recipe storage
               </label>
@@ -1130,12 +1111,15 @@ function App() {
                   <input
                     type="checkbox"
                     checked={prefs.historyEnabled}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      if (!event.target.checked) {
+                        clearHistory();
+                        setHistory([]);
+                      }
                       update({
                         historyEnabled: event.target.checked,
-                        localDataDisclosureSeen: true,
-                      })
-                    }
+                      });
+                    }}
                   />{" "}
                   Save locally
                 </label>
@@ -1151,9 +1135,36 @@ function App() {
               <p className="privacy-note">
                 History can contain sensitive query text. It stays in this
                 browser, is limited to 50 items, and never includes results.
-                Disabling history does not remove current query drafts used for
-                session restoration.
+                History storage is disabled by default.
               </p>
+              <label className="storage-toggle">
+                <input
+                  type="checkbox"
+                  checked={prefs.queryDraftsEnabled}
+                  onChange={(event) =>
+                    update({ queryDraftsEnabled: event.target.checked })
+                  }
+                />{" "}
+                Restore current query drafts locally
+              </label>
+              <button
+                className="text-button"
+                onClick={() => {
+                  clearHistory();
+                  clearSavedQueries();
+                  setHistory([]);
+                  setSaved([]);
+                  update({
+                    drafts: defaults.drafts,
+                    predicateDrafts: [],
+                    queryDraftsEnabled: false,
+                    historyEnabled: false,
+                    localRecipesEnabled: false,
+                  });
+                }}
+              >
+                Clear all local query data
+              </button>
               {history.length ? (
                 history.map((item) => (
                   <button
@@ -1312,17 +1323,15 @@ function App() {
                 })}
               </div>
             )}
-            {prefs.pageMode === "infinite" &&
-              results.hasNextPage &&
-              entries.length > 0 && (
-                <button
-                  className="load-more"
-                  disabled={results.isFetchingNextPage}
-                  onClick={() => results.fetchNextPage()}
-                >
-                  {results.isFetchingNextPage ? "Loading…" : "Load next window"}
-                </button>
-              )}
+            {results.hasNextPage && entries.length > 0 && (
+              <button
+                className="load-more"
+                disabled={results.isFetchingNextPage}
+                onClick={() => results.fetchNextPage()}
+              >
+                {results.isFetchingNextPage ? "Loading…" : "Load more"}
+              </button>
+            )}
           </div>
         </section>
       </main>

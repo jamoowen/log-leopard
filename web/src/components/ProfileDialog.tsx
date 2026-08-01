@@ -17,13 +17,21 @@ export function ProfileDialog({
   const [name, setName] = useState(profile?.name ?? "");
   const [projectId, setProjectId] = useState(profile?.projectId ?? "");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await onSave({ name, projectId }, profile?.id);
       onOpenChange(false);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Connection could not be saved",
+      );
     } finally {
       setSaving(false);
     }
@@ -70,6 +78,11 @@ export function ProfileDialog({
               Credentials never enter the browser. Authentication is managed by
               the local service.
             </p>
+            {error && (
+              <p className="inline-error" role="alert">
+                {error}
+              </p>
+            )}
             <button className="primary-button" disabled={saving}>
               {saving ? "Saving…" : "Save connection"}
             </button>

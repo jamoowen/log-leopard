@@ -201,7 +201,7 @@ export interface components {
         Entry: {
             /** @description Common HTTP request metadata. */
             httpRequest?: components["schemas"]["HTTPRequest"];
-            /** @description Provider insert ID, when present. */
+            /** @description Stable provider-derived identity for this exact log entry. */
             id: string;
             /** @description GCP log entry labels. */
             labels: {
@@ -295,7 +295,7 @@ export interface components {
              * @enum {string}
              */
             operator: "equals" | "contains" | "exists" | "gt" | "lt";
-            /** @description Dot-separated jsonPayload path. Each segment must start with a letter or underscore and contain only letters, digits, and underscores. */
+            /** @description Dot-separated structured payload path, optionally prefixed with jsonPayload. Each segment must start with a letter or underscore and contain only letters, digits, and underscores. */
             path: string;
             /** @description Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt. */
             value: unknown;

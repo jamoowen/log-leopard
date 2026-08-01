@@ -56,7 +56,7 @@ export function StructuredBuilder({
                 onChange={(event) =>
                   patch(draft.id, { path: event.target.value })
                 }
-                placeholder="request.latencyMs"
+                placeholder="level or jsonPayload.level"
               />
             </label>
             <label>

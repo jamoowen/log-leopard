@@ -4,7 +4,7 @@ LogLeopard accepts focused bug fixes, security improvements, tests, and changes 
 
 ## Development
 
-Install Go 1.26, Node.js 22, pnpm 11.8.0, `golangci-lint` v2.10.1, and the locked frontend dependencies:
+Install Go 1.26.5+, Node.js 22, pnpm 11.8.0, `golangci-lint` v2.10.1, and the locked frontend dependencies:
 
 ```sh
 pnpm --dir web install --frozen-lockfile

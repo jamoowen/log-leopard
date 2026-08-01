@@ -1,23 +1,28 @@
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath } from "node:url";
 
-import webConfig from './web/vite.config.ts'
+import webConfig from "./web/vite.config.ts";
+import { validateDevBackend } from "./web/dev-backend.mjs";
 
-const backend = process.env.LOG_LEOPARD_DEV_BACKEND ?? 'http://127.0.0.1:8787'
-const backendOrigin = new URL(backend).origin
+const backend = validateDevBackend(
+  process.env.LOG_LEOPARD_DEV_BACKEND ?? "http://127.0.0.1:8787",
+);
+const backendOrigin = backend;
 
 export default {
   ...webConfig,
-  root: fileURLToPath(new URL('./web', import.meta.url)),
+  root: fileURLToPath(new URL("./web", import.meta.url)),
   server: {
     proxy: {
-      '/api': {
+      "/api": {
         target: backend,
         changeOrigin: true,
         configure(proxy) {
-          proxy.on('proxyReq', (request) => request.setHeader('Origin', backendOrigin))
+          proxy.on("proxyReq", (request) =>
+            request.setHeader("Origin", backendOrigin),
+          );
         },
       },
-      '/openapi.json': { target: backend, changeOrigin: true },
+      "/openapi.json": { target: backend, changeOrigin: true },
     },
   },
-}
+};

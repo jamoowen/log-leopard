@@ -1,5 +1,9 @@
 # LogLeopard
 
+<p align="center">
+  <img src="web/public/log-leopard.png" width="220" alt="LogLeopard logo">
+</p>
+
 LogLeopard is a local-first browser UI for finding and reading Google Cloud logs. It aims to make focused log investigation fast without copying cloud logs or credentials into another hosted service.
 
 ## Goals
@@ -23,7 +27,7 @@ Production builds embed `web/dist` in the Go binary. Development Go builds use a
 
 ## Requirements
 
-- Go 1.26
+- Go 1.26.5 or newer in the 1.26 release line
 - Node.js 22.12+ and pnpm 11.8.0
 - Google Cloud CLI for live GCP authentication
 - `golangci-lint` v2.10.1 for the complete local quality gate
@@ -71,9 +75,9 @@ Impersonation avoids long-lived service-account keys. The impersonated account s
 For the packaged-style app, the backend prints a loopback pairing URL to copy into any browser. These commands run the embedded production UI without a separate frontend process:
 
 ```sh
-go run ./cmd/log-leopard          # live GCP through ADC
+make run                          # live GCP through ADC
 make run-fake                     # synthetic data, no GCP access
-go run ./cmd/log-leopard -open    # explicitly use the default browser
+go run -tags production ./cmd/log-leopard -open  # open after make web-build
 ```
 
 For frontend development, one command builds and supervises the backend and Vite, waits for both, prints the correctly paired Vite URL, and stops both processes on exit:
@@ -81,7 +85,10 @@ For frontend development, one command builds and supervises the backend and Vite
 ```sh
 make dev       # live GCP through ADC
 make dev-fake  # synthetic data, no GCP access
+make dev BROWSER=brave  # open the pairing URL in Brave
 ```
+
+`BROWSER` accepts `brave`, `chrome`, `firefox`, or `safari` on macOS. Without it, LogLeopard prints the URL for you to open in any browser.
 
 The root Vite config proxies `/api` and `/openapi.json` to `http://127.0.0.1:8787`. The lower-level `make web-dev` command remains available when intentionally managing the backend separately; set `LOG_LEOPARD_DEV_BACKEND` to change its proxy target.
 
@@ -146,7 +153,7 @@ pnpm --dir web run test:e2e  # optional Playwright suite; requires installed bro
 - The server binds to a numeric loopback address and does not enable permissive CORS.
 - A random ten-minute, single-use URL-fragment token creates a twelve-hour `HttpOnly`, `SameSite=Strict` session. Protected APIs require that session, and mutations also require the exact expected `Origin`.
 - Profiles are atomically stored with mode `0600` under the OS user config directory (`LogLeopard/connections.json`) unless `-config` overrides it.
-- Query results remain in memory and are never persisted. The browser may store display preferences, per-connection field pins, named query recipes, and up to 50 query strings locally. History and recipe storage can be disabled and cleared in the UI.
+- Query results remain in memory and are never persisted. Display preferences and per-connection field pins are stored locally. Query history, named recipes, and current draft restoration are separate opt-in controls that default off; disabling history or recipes deletes their stored data, and the UI can clear all local query data at once.
 - Application logs exclude credentials, project IDs, query text, provider filters, and returned log contents.
 - Log content is untrusted data and is rendered as text rather than injected HTML.
 

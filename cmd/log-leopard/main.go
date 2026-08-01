@@ -40,6 +40,7 @@ func run() error {
 	configPath := flag.String("config", "", "connection profile JSON path")
 	fakeMode := flag.Bool("fake", false, "use synthetic data without GCP")
 	open := flag.Bool("open", false, "open the pairing URL in the default browser")
+	browser := flag.String("browser", "default", "browser used with -open: default, brave, chrome, firefox, or safari")
 	browserURL := flag.String("browser-url", "", "loopback URL hosting the browser UI (defaults to the backend)")
 	openAPIPath := flag.String("write-openapi", "", "write OpenAPI JSON and exit")
 	flag.Parse()
@@ -105,7 +106,7 @@ func run() error {
 	}
 	fmt.Printf("LogLeopard: %s\n", pairingURL)
 	if *open {
-		if err := openBrowser(ctx, pairingURL); err != nil {
+		if err := openBrowser(ctx, *browser, pairingURL); err != nil {
 			slog.Warn("could not open default browser", "error", err)
 		}
 	}
@@ -142,8 +143,8 @@ func makePairingURL(base, host, token string) (string, error) {
 	return parsed.String() + "#pair=" + token, nil
 }
 
-func openBrowser(ctx context.Context, url string) error {
-	name, args, err := browserCommand(runtime.GOOS, url)
+func openBrowser(ctx context.Context, browser, url string) error {
+	name, args, err := browserCommand(runtime.GOOS, browser, url)
 	if err != nil {
 		return err
 	}
@@ -155,17 +156,39 @@ func openBrowser(ctx context.Context, url string) error {
 	return nil
 }
 
-func browserCommand(goos, url string) (string, []string, error) {
+func browserCommand(goos, browser, url string) (string, []string, error) {
 	switch goos {
 	case "darwin":
-		return "open", []string{url}, nil
+		applications := map[string]string{
+			"brave":   "Brave Browser",
+			"chrome":  "Google Chrome",
+			"firefox": "Firefox",
+			"safari":  "Safari",
+		}
+		if browser == "default" {
+			return "open", []string{url}, nil
+		}
+		if application, ok := applications[browser]; ok {
+			return "open", []string{"-a", application, url}, nil
+		}
 	case "linux":
-		return "xdg-open", []string{url}, nil
+		commands := map[string]string{
+			"brave":   "brave-browser",
+			"chrome":  "google-chrome",
+			"firefox": "firefox",
+		}
+		if browser == "default" {
+			return "xdg-open", []string{url}, nil
+		}
+		if command, ok := commands[browser]; ok {
+			return command, []string{url}, nil
+		}
 	case "windows":
-		return "rundll32", []string{"url.dll,FileProtocolHandler", url}, nil
-	default:
-		return "", nil, fmt.Errorf("opening a browser is unsupported on %s", goos)
+		if browser == "default" {
+			return "rundll32", []string{"url.dll,FileProtocolHandler", url}, nil
+		}
 	}
+	return "", nil, fmt.Errorf("browser %q is unsupported on %s", browser, goos)
 }
 
 func newServer(host, path string, backend providerapi.Provider, sessions *auth.Manager, cursors *cursor.Signer) (*server.Server, error) {

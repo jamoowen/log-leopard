@@ -7,6 +7,7 @@ cd "$root"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/log-leopard-dev.XXXXXX")
 backend_pid=""
 web_pid=""
+browser=${LOG_LEOPARD_BROWSER:-}
 
 cleanup() {
   trap - EXIT INT TERM HUP
@@ -34,6 +35,17 @@ check_port() {
 
 check_port 5173
 check_port 8787
+
+if [ -n "$browser" ]; then
+  case "$browser" in
+    brave|chrome|firefox|safari) ;;
+    *)
+      printf '%s\n' "Unsupported browser '$browser'. Use brave, chrome, firefox, or safari." >&2
+      exit 1
+      ;;
+  esac
+  set -- -open -browser "$browser" "$@"
+fi
 
 go build -o "$tmp/log-leopard" ./cmd/log-leopard
 
