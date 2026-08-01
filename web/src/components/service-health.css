@@ -1,0 +1,733 @@
+.service-health-root {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 55% -40%, rgb(117 186 255 / 8%), transparent 45%),
+    var(--bg);
+}
+
+.service-health-controls,
+.service-health-target,
+.service-health-controls button,
+.service-health-message,
+.service-health-workbench article > header,
+.service-health-workbench article > footer,
+.service-health-timeline > header,
+.service-health-timeline > header button,
+.service-health-timeline > aside button {
+  display: flex;
+  align-items: center;
+}
+
+.service-health-controls {
+  min-height: 44px;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.service-health-target {
+  margin-right: auto;
+  gap: 8px;
+}
+
+.service-health-target > span,
+.service-health-workbench article > header span,
+.service-health-workbench aside > span,
+.service-health-timeline > header span,
+.service-health-tracks > div > span {
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.1em;
+}
+
+.service-health-controls select,
+.service-health-controls button {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 10px;
+}
+
+.service-health-window {
+  display: flex;
+  gap: 3px;
+}
+
+.service-health-window button {
+  min-width: 34px;
+  justify-content: center;
+  padding-inline: 7px;
+}
+
+.service-health-window button.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+
+.service-health-controls select {
+  min-width: 150px;
+  padding: 0 8px;
+}
+
+.service-health-controls button {
+  gap: 6px;
+  padding: 0 9px;
+  color: var(--muted);
+}
+
+.service-health-delay {
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.service-health-delay i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.service-health-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.service-health-summary > div {
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+}
+
+.service-health-summary span {
+  display: block;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.1em;
+}
+
+.service-health-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 520;
+}
+
+.service-health-summary strong.warning {
+  color: var(--warning);
+}
+
+.service-health-workbench {
+  min-height: 430px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  flex: 1;
+  gap: 1px;
+  background: var(--border);
+}
+
+.service-health-workbench > article,
+.service-health-workbench > aside {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.service-health-workbench article {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-health-workbench article > header {
+  justify-content: space-between;
+  min-height: 60px;
+  padding: 12px 16px;
+}
+
+.service-health-workbench h1,
+.service-health-timeline h1 {
+  margin: 5px 0 0;
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.service-health-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.service-health-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+  background: var(--accent);
+}
+
+.service-health-legend span:last-child::before {
+  background: var(--error);
+}
+
+.service-health-chart {
+  min-height: 210px;
+  width: 100%;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 0 52px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+button.service-health-chart,
+.service-health-chart[role="slider"] {
+  cursor: crosshair;
+}
+
+.service-health-chart-plot {
+  position: relative;
+  min-height: 180px;
+  display: flex;
+  flex: 1;
+}
+
+.service-health-chart svg {
+  min-height: inherit;
+  width: 100%;
+  flex: 1;
+}
+
+.service-health-scale {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  bottom: 2px;
+  left: -43px;
+  width: 38px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  color: var(--accent);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  pointer-events: none;
+}
+
+.service-health-scale.errors {
+  right: -43px;
+  left: auto;
+  color: var(--error);
+  text-align: right;
+}
+
+.service-health-scale.latency {
+  color: var(--warning);
+}
+
+.service-health-scale strong {
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.service-health-scale small {
+  margin-top: 2px;
+  color: currentcolor;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.service-health-scale > span {
+  align-self: end;
+  color: var(--faint);
+}
+
+.service-health-gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.service-health-request-line.request {
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-request-line.error {
+  stroke: var(--error);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-request-line.latency {
+  stroke: var(--warning);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-secondary-line {
+  stroke: var(--error);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-gap-line {
+  stroke-width: 1.4;
+  stroke-dasharray: 4 4;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-gap-line.request {
+  stroke: var(--accent);
+}
+
+.service-health-gap-line.error {
+  stroke: var(--error);
+}
+
+.service-health-gap-line.latency {
+  stroke: var(--warning);
+}
+
+.service-health-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-marker {
+  fill: var(--bg);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.service-health-marker.request {
+  stroke: var(--accent);
+}
+
+.service-health-marker.error {
+  stroke: var(--error);
+}
+
+.service-health-marker.latency {
+  stroke: var(--warning);
+}
+
+.service-health-tooltip {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  min-width: 150px;
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 24%);
+  color: var(--muted);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.service-health-tooltip.start {
+  transform: none;
+}
+
+.service-health-tooltip.end {
+  transform: translateX(-100%);
+}
+
+.service-health-tooltip > strong {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.service-health-tooltip > span {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.service-health-tooltip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.service-health-tooltip i.error {
+  background: var(--error);
+}
+
+.service-health-tooltip i.latency {
+  background: var(--warning);
+}
+
+.service-health-tooltip b {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.service-health-axis {
+  position: relative;
+  height: 20px;
+  flex: 0 0 20px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+}
+
+.service-health-axis > span {
+  position: absolute;
+  top: 5px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.service-health-axis > span.start {
+  transform: none;
+}
+
+.service-health-axis > span.end {
+  transform: translateX(-100%);
+}
+
+.service-health-workbench article > footer {
+  min-height: 42px;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.service-health-latency-track {
+  border-top: 1px solid var(--border);
+}
+
+.service-health-latency-track > div:first-child {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.service-health-latency-track > div:first-child strong {
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.service-health-latency-track .service-health-chart {
+  min-height: 170px;
+  height: 170px;
+  flex: none;
+}
+
+.service-health-latency-track .service-health-chart-plot {
+  min-height: 135px;
+}
+
+.service-health-workbench article > footer svg {
+  color: var(--error);
+}
+
+.service-health-workbench article > footer button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 9px;
+}
+
+.service-health-workbench > aside {
+  padding: 18px;
+}
+
+.service-health-workbench aside h2,
+.service-health-timeline > aside h2 {
+  margin: 14px 0 8px;
+  font-size: 16px;
+  font-weight: 520;
+}
+
+.service-health-workbench aside p,
+.service-health-workbench aside small,
+.service-health-timeline > aside p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.service-health-workbench dl {
+  margin: 18px 0;
+  border-top: 1px solid var(--border);
+}
+
+.service-health-workbench dl div {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+}
+
+.service-health-workbench dt {
+  color: var(--faint);
+}
+
+.service-health-workbench dd {
+  margin: 0;
+  font-family: "SFMono-Regular", monospace;
+}
+
+.service-health-workbench aside small {
+  display: block;
+  padding: 9px;
+  border-left: 2px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+}
+
+.service-health-message,
+.service-health-empty {
+  min-height: 0;
+  flex: 1;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  color: var(--muted);
+}
+
+.service-health-message {
+  flex-direction: column;
+  text-align: center;
+}
+
+.service-health-message > span {
+  max-width: 620px;
+}
+
+.service-health-message-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.service-health-message-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.service-health-message.error {
+  color: var(--error);
+}
+
+.service-health-message.error div {
+  display: grid;
+  gap: 4px;
+}
+
+.service-health-message.error span {
+  color: var(--muted);
+}
+
+.service-health-empty {
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.service-health-empty svg {
+  margin: auto;
+  color: var(--accent);
+}
+
+.service-health-empty h1 {
+  margin: 8px 0 0;
+  font-size: 17px;
+}
+
+.service-health-empty p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.service-health-timeline {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  grid-template-rows: auto 1fr;
+  gap: 1px;
+  background: var(--border);
+}
+
+.service-health-timeline > header {
+  grid-column: 1 / -1;
+  gap: 18px;
+  min-height: 62px;
+  padding: 10px 16px;
+  background: var(--bg);
+}
+
+.service-health-timeline > header button {
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.service-health-tracks {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.service-health-tracks > div {
+  min-height: 220px;
+  display: grid;
+  grid-template-rows: 28px 1fr;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.service-health-timeline > aside {
+  padding: 20px;
+  background: var(--surface);
+}
+
+.service-health-timeline > aside > svg {
+  color: var(--warning);
+}
+
+.service-health-timeline > aside button {
+  width: 100%;
+  height: 34px;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .service-health-workbench,
+  .service-health-timeline {
+    display: block;
+  }
+  .service-health-workbench > aside,
+  .service-health-timeline > aside {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 620px) {
+  .service-health-delay {
+    display: none;
+  }
+  .service-health-controls {
+    padding-inline: 8px;
+  }
+  .service-health-controls select {
+    min-width: 110px;
+    max-width: 140px;
+  }
+  .service-health-controls button {
+    font-size: 0;
+  }
+  .service-health-window {
+    gap: 2px;
+  }
+  .service-health-window button {
+    min-width: 28px;
+    padding-inline: 4px;
+    font-size: 8px;
+  }
+  .service-health-window svg {
+    display: none;
+  }
+  .service-health-chart {
+    padding-inline: 38px;
+  }
+  .service-health-scale {
+    left: -32px;
+    width: 28px;
+  }
+  .service-health-scale.errors {
+    right: -32px;
+  }
+  .service-health-axis
+    > span:not(:first-child):not(:last-child):nth-child(even) {
+    display: none;
+  }
+  .service-health-tooltip {
+    min-width: 132px;
+  }
+  .service-health-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .service-health-summary > div {
+    padding-inline: 10px;
+  }
+  .service-health-summary > div:last-child {
+    display: none;
+  }
+  .service-health-summary strong {
+    font-size: 16px;
+  }
+  .service-health-legend {
+    display: none;
+  }
+  .service-health-workbench article > footer {
+    flex-wrap: wrap;
+  }
+  .service-health-workbench article > footer button {
+    min-height: 28px;
+  }
+}
