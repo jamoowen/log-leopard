@@ -25,6 +25,11 @@ export type RequestContextRequest =
   components["schemas"]["RequestContextInputBody"];
 export type RequestContextResponse =
   components["schemas"]["RequestContextOutputBody"];
+export type ServiceHealthRequest =
+  components["schemas"]["ServiceHealthInputBody"];
+export type ServiceHealthResponse =
+  components["schemas"]["ServiceHealthOutputBody"];
+export type HealthPoint = components["schemas"]["HealthPoint"];
 export type PairResponse = components["schemas"]["CookieOutputBody"];
 export type AuthStatus = components["schemas"]["AuthStatusOutputBody"];
 export type Problem = components["schemas"]["ErrorModel"];
@@ -56,6 +61,10 @@ export interface ApiClient {
     input: RequestContextRequest,
     signal?: AbortSignal,
   ): Promise<RequestContextResponse>;
+  serviceHealth(
+    input: ServiceHealthRequest,
+    signal?: AbortSignal,
+  ): Promise<ServiceHealthResponse>;
 }
 
 export class ApiError extends Error {

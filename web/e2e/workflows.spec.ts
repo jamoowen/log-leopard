@@ -1,9 +1,87 @@
 import { expect, test } from "@playwright/test";
 
+async function openLogs(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Logs", exact: true }).click();
+}
+
+test("service health drills into the exact log interval", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?mock=1");
+  await page.getByLabel("Health service").selectOption("payments-api");
+  await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Health service")).toHaveValue("payments-api");
+  await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
+  const chart = page.locator("button.service-health-chart").first();
+  await expect(chart.locator(".service-health-scale.request")).toContainText(
+    "Requests",
+  );
+  await expect(chart.locator(".service-health-scale.errors")).toContainText(
+    "5xx",
+  );
+  const latencyChart = page
+    .getByRole("slider", {
+      name: "P95 latency metric interval",
+    })
+    .first();
+  await expect(latencyChart).toBeVisible();
+  await latencyChart.hover({ position: { x: 120, y: 80 } });
+  await expect(page.getByRole("tooltip")).toContainText("ms");
+  await chart.focus();
+  await chart.press("Home");
+  const firstBucket = await chart.getAttribute("aria-label");
+  await chart.press("ArrowRight");
+  await expect(chart).not.toHaveAttribute("aria-label", firstBucket!);
+  const keyboardClock = (await chart.getAttribute("aria-label"))?.match(
+    /\d{2}:\d{2}/,
+  )?.[0];
+  await chart.press("Enter");
+  await expect(page.locator(".service-health-timeline h1")).toContainText(
+    keyboardClock!,
+  );
+  await page.getByRole("button", { name: "Workbench" }).click();
+  await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
+  await chart.hover({ position: { x: 120, y: 100 } });
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("Requests");
+  await expect(tooltip).toContainText("5xx");
+  const hoveredClock = (await tooltip.locator("strong").textContent())?.slice(
+    -5,
+  );
+  if (testInfo.project.name === "mobile") {
+    await chart.tap({ position: { x: 120, y: 100 } });
+  } else {
+    await chart.click({ position: { x: 120, y: 100 } });
+  }
+  await expect(page.getByText("SELECTED METRIC INTERVAL")).toBeVisible();
+  await expect(page.locator(".service-health-timeline h1")).toContainText(
+    hoveredClock!,
+  );
+  await page.getByRole("button", { name: /Open interval in logs/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Logs", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("textbox", { name: "Query" })).toHaveValue(
+    "httpRequest.status >= 500 AND httpRequest.status < 600",
+  );
+  await expect(page.getByRole("button", { name: "Custom" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: /1 source/ })).toBeVisible();
+  const start = await page.getByLabel("Custom start").inputValue();
+  const end = await page.getByLabel("Custom end").inputValue();
+  expect(new Date(end).getTime() - new Date(start).getTime()).toBe(60_000);
+  await expect(page.getByText(/entries loaded/)).toBeVisible();
+});
+
 test("desktop query and inspector workflow", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
-  await expect(page.getByText("LOGLEOPARD", { exact: true })).toBeVisible();
+  await openLogs(page);
+  await expect(page.getByText("Log Leopard", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /All sources/ }).click();
   await expect(page.getByText(/discovery fallback/)).toBeHidden();
   await page.getByText("payments-api", { exact: true }).click();
@@ -26,6 +104,8 @@ test("desktop query and inspector workflow", async ({ page }, testInfo) => {
 test("load more appends the next result page", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
+  await openLogs(page);
+  await page.getByRole("button", { name: "1 hour" }).click();
   await page.getByRole("button", { name: /Run query/ }).click();
   await expect(page.getByText("80 entries loaded")).toBeVisible();
 
@@ -39,6 +119,7 @@ test("identical custom requests refetch and polling does not lock execution", as
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
+  await openLogs(page);
   await page.getByRole("button", { name: "Custom" }).click();
   await page.getByLabel("Custom start").fill("2026-07-01T10:00");
   await page.getByLabel("Custom end").fill("2026-07-01T10:15");
@@ -63,6 +144,7 @@ test("changing connection clears profile-bound results and inspector state", asy
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
+  await openLogs(page);
   await page.getByRole("button", { name: /Run query/ }).click();
   await expect(page.getByText(/entries loaded/)).toBeVisible();
   await page.locator(".log-row").first().click();
@@ -94,6 +176,7 @@ test("hostile log text remains inert outside JSON views", async ({
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
+  await openLogs(page);
   await page.getByRole("textbox", { name: "Query" }).fill("User payload");
   await page.getByRole("button", { name: /Run query/ }).click();
   const row = page.locator(".log-row").first();
@@ -112,6 +195,7 @@ test("pairing resolves before protected data loads and clears the fragment", asy
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1#pair=synthetic-pairing-token");
   await expect(page.getByText("Pairing session…")).toBeVisible();
+  await openLogs(page);
   await expect(page.getByText("Define a query")).toBeVisible();
   await expect(page).not.toHaveURL(/#pair=/);
   await expect(
@@ -122,6 +206,8 @@ test("pairing resolves before protected data loads and clears the fragment", asy
 test("mobile core workflow remains usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   await page.goto("/?mock=1");
+  await expect(page.getByText("Choose a Cloud Run service")).toBeVisible();
+  await openLogs(page);
   await page.getByRole("textbox", { name: "Query" }).fill("Request");
   await page.getByRole("button", { name: /Run query/ }).click();
   await expect(page.locator(".log-row").first()).toBeVisible();
@@ -136,6 +222,7 @@ test("structured builder, field tools, context, recipes, and commands work toget
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
+  await openLogs(page);
 
   await page.getByRole("button", { name: "Structured builder" }).click();
   await expect(

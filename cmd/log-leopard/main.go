@@ -22,7 +22,6 @@ import (
 	"github.com/jamoowen/log-leopard/internal/auth"
 	"github.com/jamoowen/log-leopard/internal/cursor"
 	"github.com/jamoowen/log-leopard/internal/profile"
-	providerapi "github.com/jamoowen/log-leopard/internal/provider"
 	"github.com/jamoowen/log-leopard/internal/provider/fake"
 	"github.com/jamoowen/log-leopard/internal/provider/gcp"
 	"github.com/jamoowen/log-leopard/internal/server"
@@ -67,7 +66,7 @@ func run() error {
 	}
 	sessions, pairingToken := auth.NewManager(10*time.Minute, 12*time.Hour)
 	cursors := cursor.New(15 * time.Minute)
-	var backend providerapi.Provider = gcp.New()
+	var backend cloudProvider = gcp.New()
 	if *fakeMode {
 		backend = fake.New()
 	}
@@ -205,15 +204,21 @@ func browserCommand(goos, browser, url string) (string, []string, error) {
 	return "", nil, fmt.Errorf("browser %q is unsupported on %s", browser, goos)
 }
 
-func newServer(host, path string, backend providerapi.Provider, sessions *auth.Manager, cursors *cursor.Signer) (*server.Server, error) {
+type cloudProvider interface {
+	server.LogProvider
+	server.HealthProvider
+}
+
+func newServer(host, path string, backend cloudProvider, sessions *auth.Manager, cursors *cursor.Signer) (*server.Server, error) {
 	return server.New(server.Config{
-		Host:     host,
-		Origin:   "http://" + host,
-		Profiles: profile.NewStore(path),
-		Provider: backend,
-		Sessions: sessions,
-		Cursors:  cursors,
-		Logger:   slog.Default(),
+		Host:           host,
+		Origin:         "http://" + host,
+		Profiles:       profile.NewStore(path),
+		Provider:       backend,
+		HealthProvider: backend,
+		Sessions:       sessions,
+		Cursors:        cursors,
+		Logger:         slog.Default(),
 	})
 }
 

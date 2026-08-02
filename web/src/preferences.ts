@@ -5,6 +5,7 @@ const KEY = "logleopard.preferences.v1";
 const HISTORY_KEY = "logleopard.history.v1";
 const SAVED_KEY = "logleopard.saved-queries.v1";
 const PINS_KEY = "logleopard.field-pins.v1";
+const HEALTH_KEY = "logleopard.health-preferences.v1";
 const queryModes: QueryMode[] = ["leopard", "structured", "native"];
 const severities: Severity[] = [
   "DEFAULT",
@@ -28,6 +29,11 @@ const blockedPathParts = new Set(["__proto__", "prototype", "constructor"]);
 let fallbackDraftId = 0;
 
 export type PollInterval = 0 | 5 | 10 | 30;
+export type HealthWindow = "1h" | "6h" | "24h" | "7d";
+export interface HealthPreferences {
+  target: string;
+  window: HealthWindow;
+}
 export interface SavedQuery {
   id: string;
   name: string;
@@ -78,6 +84,11 @@ export const defaults: Preferences = {
   historyEnabled: false,
   localRecipesEnabled: false,
   polling: 0,
+};
+
+const defaultHealthPreferences: HealthPreferences = {
+  target: "",
+  window: "1h",
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -300,6 +311,52 @@ export function savePreferences(
   delete safe.drafts;
   delete safe.predicateDrafts;
   safeSet(storage, KEY, safe);
+}
+
+export function loadHealthPreferences(
+  profileId: string,
+  storage: Storage = localStorage,
+): HealthPreferences {
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(HEALTH_KEY) ?? "{}");
+    if (!isPlainObject(parsed) || !isPlainObject(parsed[profileId]))
+      return defaultHealthPreferences;
+    const stored = parsed[profileId];
+    return {
+      target:
+        typeof stored.target === "string" && stored.target.length <= 128
+          ? stored.target
+          : "",
+      window: enumValue(
+        stored.window,
+        ["1h", "6h", "24h", "7d"],
+        defaultHealthPreferences.window,
+      ),
+    };
+  } catch {
+    return defaultHealthPreferences;
+  }
+}
+
+export function saveHealthPreferences(
+  profileId: string,
+  value: HealthPreferences,
+  storage: Storage = localStorage,
+) {
+  let stored: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(HEALTH_KEY) ?? "{}");
+    if (isPlainObject(parsed)) stored = parsed;
+  } catch {
+    // Replace malformed health preferences with the current safe value.
+  }
+  const safeEntries = Object.entries(stored)
+    .filter(([key, item]) => key.length <= 128 && isPlainObject(item))
+    .slice(0, 19);
+  safeSet(storage, HEALTH_KEY, {
+    ...Object.fromEntries(safeEntries),
+    [profileId]: value,
+  });
 }
 
 export function loadHistory(storage: Storage = localStorage): string[] {
