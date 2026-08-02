@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,7 +167,7 @@ func TestHostOriginAndOpenAPI(t *testing.T) {
 		t.Fatalf("OpenAPI status %d: %s", w.Code, w.Body.String())
 	}
 	for _, want := range []string{
-		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`,
+		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`, `"summary":"Get Cloud Run fleet overview"`,
 		`"description":"Exact payload path selected for message."`, `"description":"Exact structured-field comparison operator."`,
 		`"X-LogLeopard-Warning"`,
 	} {
@@ -250,11 +251,19 @@ type recordingProvider struct {
 	healthRequests []providerapi.ServiceHealthRequest
 	healthResult   providerapi.ServiceHealthResult
 	healthErr      error
+	fleetRequests  []providerapi.FleetOverviewRequest
+	fleetResult    providerapi.FleetOverviewResult
+	fleetErr       error
 }
 
 func (p *recordingProvider) ServiceHealth(_ context.Context, req providerapi.ServiceHealthRequest) (providerapi.ServiceHealthResult, error) {
 	p.healthRequests = append(p.healthRequests, req)
 	return p.healthResult, p.healthErr
+}
+
+func (p *recordingProvider) FleetOverview(_ context.Context, req providerapi.FleetOverviewRequest) (providerapi.FleetOverviewResult, error) {
+	p.fleetRequests = append(p.fleetRequests, req)
+	return p.fleetResult, p.fleetErr
 }
 
 func TestServiceHealthUsesStoredProjectAndServerBounds(t *testing.T) {
@@ -348,6 +357,67 @@ func TestHealthAlignmentCapsBuckets(t *testing.T) {
 		if got := healthAlignment(test.window); got != test.want {
 			t.Errorf("healthAlignment(%s) = %s, want %s", test.window, got, test.want)
 		}
+	}
+}
+
+func TestFleetOverviewUsesStoredProjectAndOneProviderCall(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	latency := 125.0
+	p := &recordingProvider{Provider: fake.New()}
+	p.fleetResult = providerapi.FleetOverviewResult{
+		Start: start, End: start.Add(time.Hour),
+		Services: []providerapi.FleetOverviewSummary{
+			{Service: "checkout-api", RequestCount: 42, ServerErrorCount: 2, RequestLatencyP95Ms: &latency},
+			{Service: "worker"},
+		},
+	}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	response := request(t, s, http.MethodPost, "/api/v1/fleet-overview", map[string]any{
+		"profileId": created.ID, "services": []string{"worker", "checkout-api"}, "start": start, "end": start.Add(time.Hour),
+	}, cookie, testOrigin)
+	if response.Code != http.StatusOK {
+		t.Fatalf("fleet status %d: %s", response.Code, response.Body.String())
+	}
+	if len(p.fleetRequests) != 1 {
+		t.Fatalf("fleet requests = %d", len(p.fleetRequests))
+	}
+	got := p.fleetRequests[0]
+	if got.ProjectID != "synthetic-project-123" || !slices.Equal(got.Services, []string{"worker", "checkout-api"}) || !got.Start.Equal(start) || !got.End.Equal(start.Add(time.Hour)) {
+		t.Fatalf("unexpected provider request: %#v", got)
+	}
+	if strings.Contains(response.Body.String(), "synthetic-project-123") || !strings.Contains(response.Body.String(), `"requestLatencyP95Ms":null`) {
+		t.Fatalf("unexpected fleet response: %s", response.Body.String())
+	}
+}
+
+func TestFleetOverviewRejectsInvalidScopeBeforeProviderCall(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New()}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	tooMany := make([]string, providerapi.MaxFleetServices+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("service-%d", i)
+	}
+	tests := []map[string]any{
+		{"profileId": created.ID, "services": []string{}, "start": start, "end": start.Add(time.Hour)},
+		{"profileId": created.ID, "services": []string{"api", "api"}, "start": start, "end": start.Add(time.Hour)},
+		{"profileId": created.ID, "services": []string{`api" OR true`}, "start": start, "end": start.Add(time.Hour)},
+		{"profileId": created.ID, "services": tooMany, "start": start, "end": start.Add(time.Hour)},
+		{"profileId": created.ID, "services": []string{"api"}, "start": start, "end": start.Add(8 * 24 * time.Hour)},
+		{"profileId": created.ID, "services": []string{"api"}, "start": start, "end": start.Add(time.Hour), "metric": "custom.googleapis.com/private"},
+	}
+	for _, body := range tests {
+		response := request(t, s, http.MethodPost, "/api/v1/fleet-overview", body, cookie, testOrigin)
+		if response.Code != http.StatusBadRequest && response.Code != http.StatusUnprocessableEntity {
+			t.Errorf("invalid fleet scope status %d: %s", response.Code, response.Body.String())
+		}
+	}
+	if len(p.fleetRequests) != 0 {
+		t.Fatalf("provider received invalid fleet requests: %#v", p.fleetRequests)
 	}
 }
 

@@ -4,13 +4,29 @@ async function openLogs(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Logs", exact: true }).click();
 }
 
+test("fleet overview opens a selected service", async ({ page }) => {
+  await page.goto("/?mock=1");
+  await expect(
+    page.getByRole("table", { name: /Cloud Run fleet metrics/ }),
+  ).toBeVisible();
+  await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /edge-router/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Service health" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Health service")).toHaveValue("edge-router");
+  await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
+});
+
 test("service health drills into the exact log interval", async ({
   page,
 }, testInfo) => {
   await page.goto("/?mock=1");
+  await page.getByRole("button", { name: "Service health" }).click();
   await page.getByLabel("Health service").selectOption("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Service health" }).click();
   await expect(page.getByLabel("Health service")).toHaveValue("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
   const chart = page.locator("button.service-health-chart").first();
@@ -206,6 +222,7 @@ test("pairing resolves before protected data loads and clears the fragment", asy
 test("mobile core workflow remains usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   await page.goto("/?mock=1");
+  await page.getByRole("button", { name: "Service health" }).click();
   await expect(page.getByText("Choose a Cloud Run service")).toBeVisible();
   await openLogs(page);
   await page.getByRole("textbox", { name: "Query" }).fill("Request");

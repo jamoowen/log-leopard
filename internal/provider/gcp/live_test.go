@@ -91,6 +91,43 @@ func TestLiveServiceHealth(t *testing.T) {
 	}
 }
 
+func TestLiveFleetOverview(t *testing.T) {
+	projectID := os.Getenv("LOG_LEOPARD_GCP_PROJECT")
+	if projectID == "" {
+		t.Skip("set LOG_LEOPARD_GCP_PROJECT to run the read-only live fleet-overview smoke test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	services, err := discoverServices(ctx, projectID)
+	if err != nil {
+		t.Fatalf("live service discovery failed: category=%s", errorCategory(err))
+	}
+	if len(services) == 0 {
+		t.Skip("project has no Cloud Run services")
+	}
+	service := services[0].ID
+	requestedService := os.Getenv("LOG_LEOPARD_GCP_SERVICE")
+	if requestedService != "" {
+		service = requestedService
+	}
+	end := time.Now().UTC().Truncate(time.Minute)
+	result, err := New().FleetOverview(ctx, provider.FleetOverviewRequest{
+		ProjectID: projectID,
+		Services:  []string{service},
+		Start:     end.Add(-24 * time.Hour),
+		End:       end,
+	})
+	if err != nil {
+		t.Fatalf("live fleet overview failed: category=%s", errorCategory(err))
+	}
+	if len(result.Services) != 1 || result.Services[0].Service != service {
+		t.Fatal("live fleet overview returned an unexpected shape")
+	}
+	if requestedService != "" && (result.Services[0].RequestCount == 0 || result.Services[0].RequestLatencyP95Ms == nil) {
+		t.Fatal("explicit live service returned incomplete fleet metrics")
+	}
+}
+
 func errorCategory(err error) string {
 	for name, target := range map[string]error{
 		"authentication":    provider.ErrAuthentication,

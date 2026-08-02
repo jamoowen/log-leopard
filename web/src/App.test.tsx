@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   query: vi.fn<ApiClient["query"]>(),
   requestContext: vi.fn<ApiClient["requestContext"]>(),
   serviceHealth: vi.fn<ApiClient["serviceHealth"]>(),
+  fleetOverview: vi.fn<ApiClient["fleetOverview"]>(),
 }));
 
 vi.mock("./api/client", () => ({

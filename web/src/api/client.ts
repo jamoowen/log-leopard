@@ -1,6 +1,7 @@
 import {
   ApiError,
   type ApiClient,
+  type FleetOverviewRequest,
   type Problem,
   type ProfileInput,
   type QueryRequest,
@@ -82,6 +83,12 @@ const httpClient: ApiClient = {
     }),
   serviceHealth: (input: ServiceHealthRequest, signal) =>
     request("/service-health", {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(signal ? { signal } : {}),
+    }),
+  fleetOverview: (input: FleetOverviewRequest, signal) =>
+    request("/fleet-overview", {
       method: "POST",
       body: JSON.stringify(input),
       ...(signal ? { signal } : {}),

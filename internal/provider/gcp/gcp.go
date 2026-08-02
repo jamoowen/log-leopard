@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,10 +25,11 @@ import (
 type Provider struct {
 	discoverServices func(context.Context, string) ([]provider.Service, error)
 	serviceHealth    func(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
+	fleetOverview    func(context.Context, provider.FleetOverviewRequest) (provider.FleetOverviewResult, error)
 }
 
 func New() *Provider {
-	return &Provider{discoverServices: discoverServices, serviceHealth: queryServiceHealth}
+	return &Provider{discoverServices: discoverServices, serviceHealth: queryServiceHealth, fleetOverview: queryFleetOverview}
 }
 
 func (*Provider) ADCStatus(ctx context.Context) (bool, string) {
@@ -55,7 +57,7 @@ func discoverServices(ctx context.Context, projectID string) ([]provider.Service
 		return nil, fmt.Errorf("create Cloud Run client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
-	services := []provider.Service{}
+	resourceNames := []string{}
 	it := client.ListServices(ctx, &runpb.ListServicesRequest{Parent: "projects/" + projectID + "/locations/-"})
 	for {
 		service, err := it.Next()
@@ -65,15 +67,32 @@ func discoverServices(ctx context.Context, projectID string) ([]provider.Service
 		if err != nil {
 			return nil, fmt.Errorf("list Cloud Run services: %w", err)
 		}
-		name := service.GetName()
+		resourceNames = append(resourceNames, service.GetName())
+	}
+	return normalizeServiceNames(resourceNames), nil
+}
+
+func normalizeServiceNames(resourceNames []string) []provider.Service {
+	names := make(map[string]struct{}, len(resourceNames))
+	for _, resourceName := range resourceNames {
+		name := resourceName
 		if slash := strings.LastIndexByte(name, '/'); slash >= 0 {
 			name = name[slash+1:]
 		}
 		if name != "" {
-			services = append(services, provider.Service{ID: name, Name: name})
+			names[name] = struct{}{}
 		}
 	}
-	return services, nil
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	slices.Sort(ordered)
+	services := make([]provider.Service, 0, len(ordered))
+	for _, name := range ordered {
+		services = append(services, provider.Service{ID: name, Name: name})
+	}
+	return services
 }
 
 func (*Provider) Query(ctx context.Context, req provider.QueryRequest) (provider.QueryResult, error) {
@@ -112,6 +131,13 @@ func (p *Provider) ServiceHealth(ctx context.Context, req provider.ServiceHealth
 		return provider.ServiceHealthResult{}, err
 	}
 	return p.serviceHealth(ctx, req)
+}
+
+func (p *Provider) FleetOverview(ctx context.Context, req provider.FleetOverviewRequest) (provider.FleetOverviewResult, error) {
+	if err := validateFleetOverviewRequest(req); err != nil {
+		return provider.FleetOverviewResult{}, err
+	}
+	return p.fleetOverview(ctx, req)
 }
 
 func classifyError(err error) error {
