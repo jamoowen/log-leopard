@@ -162,6 +162,7 @@ function App() {
     "checking" | "pairing" | "ready" | "unpaired"
   >(() => (pairingToken.current ? "pairing" : "checking"));
   const [sessionRevision, setSessionRevision] = useState(0);
+  const paletteTriggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef(false);
   const runRef = useRef(0);
@@ -697,7 +698,9 @@ function App() {
             </span>
           )}
           <button
+            ref={paletteTriggerRef}
             className="palette-trigger"
+            aria-label="Open command palette"
             onClick={() => setPaletteOpen(true)}
           >
             <CommandIcon size={13} />
@@ -1627,6 +1630,7 @@ function App() {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         commands={commands}
+        returnFocusRef={paletteTriggerRef}
       />
     </div>
   );

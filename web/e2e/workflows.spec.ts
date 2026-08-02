@@ -124,24 +124,32 @@ test("command palette navigates primary views", async ({ page }) => {
 
   await page.keyboard.press("Control+k");
   await page.getByLabel("Search commands").fill("service health");
-  await page.getByRole("button", { name: /Open Service health/ }).click();
+  await page.getByLabel("Search commands").press("Enter");
   await expect(
     page.getByRole("button", { name: "Service health" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page).toHaveURL(/view=health/);
 
   await page.keyboard.press("Control+k");
-  await page.getByLabel("Search commands").fill("open logs");
-  await page.getByRole("button", { name: /Open Logs/ }).click();
+  await page.getByLabel("Search commands").fill("open");
+  await page.getByLabel("Search commands").press("End");
+  await page.getByLabel("Search commands").press("Enter");
   await expect(page.getByRole("textbox", { name: "Query" })).toBeVisible();
   await expect(page).toHaveURL(/view=logs/);
 
   await page.keyboard.press("Control+k");
   await page.getByLabel("Search commands").fill("fleet overview");
-  await page.getByRole("button", { name: /Open Fleet overview/ }).click();
+  await page.getByRole("option", { name: /Open Fleet overview/ }).click();
   await page.keyboard.press("Control+k");
   await page.getByLabel("Search commands").fill("run query");
   await expect(page.getByText("No matching command.")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const trigger = page.getByRole("button", { name: "Open command palette" });
+  await trigger.click();
+  await expect(page.getByLabel("Search commands")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
 });
 
 test("desktop query and inspector workflow", async ({ page }, testInfo) => {
@@ -330,7 +338,7 @@ test("structured builder, field tools, context, recipes, and commands work toget
 
   await page.keyboard.press("ControlOrMeta+KeyK");
   await page.getByLabel("Search commands").fill("poll every 10");
-  await page.getByRole("button", { name: /Poll every 10 seconds/ }).click();
+  await page.getByRole("option", { name: /Poll every 10 seconds/ }).click();
   await expect(page.getByRole("combobox", { name: "Polling" })).toContainText(
     "Polling every 10s",
   );
