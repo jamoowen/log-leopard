@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -75,6 +76,11 @@ func TestNormalizePreservesOriginalsAndRaw(t *testing.T) {
 }
 
 func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
+	manyServices := make([]provider.Service, provider.MaxDiscoveredServices+1)
+	for i := range manyServices {
+		name := fmt.Sprintf("service-%03d", i)
+		manyServices[i] = provider.Service{ID: name, Name: name}
+	}
 	tests := []struct {
 		name        string
 		services    []provider.Service
@@ -84,6 +90,7 @@ func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
 	}{
 		{name: "no deployed services", services: []provider.Service{}, wantCount: 1},
 		{name: "services discovered", services: []provider.Service{{ID: "api", Name: "api"}}, wantCount: 2},
+		{name: "services limited", services: manyServices, wantWarning: true, wantCount: provider.MaxDiscoveredServices + 1},
 		{name: "discovery failed", err: errors.New("permission denied for secret project"), wantWarning: true, wantCount: 1},
 	}
 	for _, tt := range tests {

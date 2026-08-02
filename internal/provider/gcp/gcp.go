@@ -47,6 +47,10 @@ func (p *Provider) Discover(ctx context.Context, projectID string) provider.Disc
 		discovery.Warning = "Cloud Run discovery is unavailable; manual and all-logs queries still work."
 		return discovery
 	}
+	if len(services) > provider.MaxDiscoveredServices {
+		services = services[:provider.MaxDiscoveredServices]
+		discovery.Warning = "Cloud Run discovery is limited to 100 unique service names; additional services were omitted."
+	}
 	discovery.Services = append(discovery.Services, services...)
 	return discovery
 }
@@ -57,7 +61,8 @@ func discoverServices(ctx context.Context, projectID string) ([]provider.Service
 		return nil, fmt.Errorf("create Cloud Run client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
-	resourceNames := []string{}
+	resourceNames := make([]string, 0, provider.MaxDiscoveredServices+1)
+	seen := make(map[string]struct{}, provider.MaxDiscoveredServices+1)
 	it := client.ListServices(ctx, &runpb.ListServicesRequest{Parent: "projects/" + projectID + "/locations/-"})
 	for {
 		service, err := it.Next()
@@ -67,7 +72,22 @@ func discoverServices(ctx context.Context, projectID string) ([]provider.Service
 		if err != nil {
 			return nil, fmt.Errorf("list Cloud Run services: %w", err)
 		}
-		resourceNames = append(resourceNames, service.GetName())
+		resourceName := service.GetName()
+		name := resourceName
+		if slash := strings.LastIndexByte(name, '/'); slash >= 0 {
+			name = name[slash+1:]
+		}
+		if name == "" {
+			continue
+		}
+		if _, duplicate := seen[name]; duplicate {
+			continue
+		}
+		seen[name] = struct{}{}
+		resourceNames = append(resourceNames, resourceName)
+		if len(resourceNames) > provider.MaxDiscoveredServices {
+			break
+		}
 	}
 	return normalizeServiceNames(resourceNames), nil
 }

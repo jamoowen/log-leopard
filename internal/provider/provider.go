@@ -7,11 +7,12 @@ import (
 )
 
 const (
-	MaxPageSize      = 200
-	MaxResponseBytes = 4 << 20
-	MaxHealthBuckets = 300
-	MaxHealthWindow  = 7 * 24 * time.Hour
-	MaxFleetServices = 20
+	MaxPageSize           = 200
+	MaxResponseBytes      = 4 << 20
+	MaxDiscoveredServices = 100
+	MaxHealthBuckets      = 300
+	MaxHealthWindow       = 7 * 24 * time.Hour
+	MaxFleetServices      = 20
 )
 
 var (

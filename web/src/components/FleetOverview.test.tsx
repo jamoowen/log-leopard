@@ -18,7 +18,10 @@ const sources: Source[] = [
 
 type OpenService = (service: string, window: HealthWindow) => void;
 
-function renderFleet(onOpenService: OpenService = vi.fn<OpenService>()) {
+function renderFleet(
+  onOpenService: OpenService = vi.fn<OpenService>(),
+  discoveryWarning?: string,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -34,6 +37,7 @@ function renderFleet(onOpenService: OpenService = vi.fn<OpenService>()) {
         }}
         sources={sources}
         discoveryPending={false}
+        {...(discoveryWarning ? { discoveryWarning } : {})}
         sessionReady
         onOpenService={onOpenService}
       />
@@ -95,4 +99,14 @@ test("changes the bounded metric window", async () => {
   expect(
     new Date(request.end).getTime() - new Date(request.start).getTime(),
   ).toBe(24 * 60 * 60_000);
+});
+
+test("shows a bounded discovery warning without hiding available services", async () => {
+  renderFleet(
+    undefined,
+    "Cloud Run discovery is limited to 100 unique service names; additional services were omitted.",
+  );
+
+  expect(await screen.findByRole("table")).toBeVisible();
+  expect(screen.getByText(/limited to 100 unique service names/)).toBeVisible();
 });
