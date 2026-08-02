@@ -436,6 +436,14 @@ function App() {
     setAppView("health");
   }
 
+  function openPrimaryView(view: PrimaryView) {
+    if (view !== "logs") {
+      setSelected(null);
+      setContextSelected(null);
+    }
+    setAppView(view);
+  }
+
   useEffect(() => {
     if (!prefs.polling) return undefined;
     const timer = window.setInterval(() => {
@@ -583,6 +591,20 @@ function App() {
         ? "Polling paused · tab hidden"
         : `Polling every ${prefs.polling}s`;
   const commands: Command[] = [
+    ...(
+      [
+        ["fleet", "Fleet overview"],
+        ["health", "Service health"],
+        ["logs", "Logs"],
+      ] as const
+    ).map(
+      ([view, label]): Command => ({
+        id: `view-${view}`,
+        label: `Open ${label}`,
+        group: "Navigation",
+        run: () => openPrimaryView(view),
+      }),
+    ),
     ...(appView === "logs"
       ? [
           {
@@ -746,11 +768,7 @@ function App() {
           type="button"
           className={appView === "fleet" ? "active" : ""}
           aria-pressed={appView === "fleet"}
-          onClick={() => {
-            setSelected(null);
-            setContextSelected(null);
-            setAppView("fleet");
-          }}
+          onClick={() => openPrimaryView("fleet")}
         >
           <Layers3 size={13} /> Fleet overview
         </button>
@@ -758,11 +776,7 @@ function App() {
           type="button"
           className={appView === "health" ? "active" : ""}
           aria-pressed={appView === "health"}
-          onClick={() => {
-            setSelected(null);
-            setContextSelected(null);
-            setAppView("health");
-          }}
+          onClick={() => openPrimaryView("health")}
         >
           <Activity size={13} /> Service health
         </button>
@@ -770,7 +784,7 @@ function App() {
           type="button"
           className={appView === "logs" ? "active" : ""}
           aria-pressed={appView === "logs"}
-          onClick={() => setAppView("logs")}
+          onClick={() => openPrimaryView("logs")}
         >
           <Search size={13} /> Logs
         </button>
