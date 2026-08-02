@@ -1405,8 +1405,12 @@ kbd {
   text-align: left;
 }
 .command-list button:hover,
-.command-list button:focus-visible {
+.command-list button:focus-visible,
+.command-list button.active {
   background: var(--surface-3);
+}
+.command-list button.active small {
+  color: var(--accent);
 }
 .command-list button > span {
   display: grid;
