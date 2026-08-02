@@ -4,7 +4,7 @@
   <img src="web/public/log-leopard.png" width="220" alt="LogLeopard logo">
 </p>
 
-LogLeopard is a local-first browser UI for finding and reading Google Cloud logs. It aims to make focused log investigation fast without copying cloud logs or credentials into another hosted service.
+LogLeopard is a local-first browser UI for finding and reading Google Cloud logs. It is intended to be a lightweight, free way to query logs without using the nasty gcloud ui or paying out of your ass for datadog. I built this purely to help me interrogate logs from cloud run but it would be cool if it could be extended to other cloud providers...
 
 ## Goals
 
