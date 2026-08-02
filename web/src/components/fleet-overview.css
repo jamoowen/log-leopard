@@ -121,6 +121,99 @@
   box-shadow: var(--shadow);
 }
 
+.fleet-table-toolbar,
+.fleet-table-toolbar > div,
+.fleet-filter {
+  display: flex;
+  align-items: center;
+}
+
+.fleet-table-toolbar {
+  min-height: 46px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 10px 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.fleet-table-toolbar > div:first-child {
+  gap: 9px;
+}
+
+.fleet-table-toolbar > div:first-child span,
+.fleet-table-toolbar > div:first-child strong {
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.1em;
+}
+
+.fleet-table-toolbar > div:first-child span {
+  color: var(--faint);
+}
+
+.fleet-table-toolbar > div:first-child strong {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.fleet-filter {
+  width: min(260px, 45%);
+  height: 30px;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--faint);
+}
+
+.fleet-filter:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+
+.fleet-filter input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+}
+
+.fleet-filter input:focus-visible {
+  outline: 0;
+}
+
+.fleet-filter input::placeholder {
+  color: var(--faint);
+}
+
+.fleet-filter input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.fleet-filter button {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.fleet-filter button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
 .fleet-row {
   display: grid;
   grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(110px, 0.7fr));
@@ -215,6 +308,7 @@
 }
 
 .fleet-quiet,
+.fleet-no-match,
 .fleet-footnote {
   color: var(--faint);
   font-size: 10px;
@@ -223,6 +317,13 @@
 .fleet-quiet {
   margin: 0;
   padding: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.fleet-no-match {
+  margin: 0;
+  padding: 24px 16px;
   border-top: 1px solid var(--border);
   text-align: center;
 }
@@ -259,6 +360,18 @@
     border: 0;
     background: transparent;
     box-shadow: none;
+  }
+
+  .fleet-table-toolbar {
+    margin-bottom: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .fleet-filter {
+    width: min(230px, 62%);
+    background: var(--surface);
   }
 
   .fleet-head {

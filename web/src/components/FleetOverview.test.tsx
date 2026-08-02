@@ -111,6 +111,31 @@ test("refreshes fleet metrics explicitly", async () => {
   await waitFor(() => expect(fleetOverview).toHaveBeenCalledTimes(2));
 });
 
+test("filters services locally and clears the filter", async () => {
+  const user = userEvent.setup();
+  renderFleet();
+  await screen.findByRole("table");
+  const filter = screen.getByRole("searchbox", {
+    name: "Filter fleet services",
+  });
+
+  await user.type(filter, "work");
+  expect(screen.getByText("1 OF 2")).toBeVisible();
+  expect(screen.getByRole("button", { name: /worker/ })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /api/ })).toBeNull();
+  expect(fleetOverview).toHaveBeenCalledTimes(1);
+
+  await user.clear(filter);
+  await user.type(filter, "missing");
+  expect(screen.getByText("No services match “missing”.")).toBeVisible();
+
+  await user.click(
+    screen.getByRole("button", { name: "Clear service filter" }),
+  );
+  expect(screen.getByText("2 OF 2")).toBeVisible();
+  expect(screen.getByRole("button", { name: /api/ })).toBeVisible();
+});
+
 test("shows a bounded discovery warning without hiding available services", async () => {
   renderFleet(
     undefined,

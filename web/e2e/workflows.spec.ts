@@ -10,6 +10,12 @@ test("fleet overview opens a selected service", async ({ page }) => {
     page.getByRole("table", { name: /Cloud Run fleet metrics/ }),
   ).toBeVisible();
   await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+  const filter = page.getByRole("searchbox", {
+    name: "Filter fleet services",
+  });
+  await filter.fill("edge");
+  await expect(page.getByText("1 OF 3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /payments-api/ })).toBeHidden();
   await page.getByRole("button", { name: /edge-router/ }).click();
   await expect(
     page.getByRole("button", { name: "Service health" }),
