@@ -252,6 +252,137 @@
         ],
         "type": "object"
       },
+      "FleetOverviewInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/FleetOverviewInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "end": {
+            "description": "Exclusive absolute end timestamp, no more than seven days after start.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "profileId": {
+            "description": "Connection profile ID; the project is resolved only from this stored profile.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "services": {
+            "description": "Unique exact Cloud Run service names to summarize.",
+            "items": {
+              "maxLength": 49,
+              "minLength": 1,
+              "pattern": "^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ],
+            "uniqueItems": true
+          },
+          "start": {
+            "description": "Inclusive absolute start timestamp.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId",
+          "services",
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
+      "FleetOverviewOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/FleetOverviewOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "end": {
+            "description": "Exclusive absolute end timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "services": {
+            "description": "One deterministic summary for every requested service, ordered by service name.",
+            "items": {
+              "$ref": "#/components/schemas/FleetOverviewSummary"
+            },
+            "maxItems": 20,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "start": {
+            "description": "Inclusive absolute start timestamp.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "services"
+        ],
+        "type": "object"
+      },
+      "FleetOverviewSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "requestCount": {
+            "description": "Total requests observed in the window.",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "requestLatencyP95Ms": {
+            "description": "Merged p95 request latency in milliseconds, or null when no latency data is available.",
+            "format": "double",
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "serverErrorCount": {
+            "description": "Total 5xx requests observed in the window.",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "service": {
+            "description": "Requested Cloud Run service name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "requestCount",
+          "serverErrorCount",
+          "requestLatencyP95Ms"
+        ],
+        "type": "object"
+      },
       "HTTPRequest": {
         "additionalProperties": false,
         "properties": {
@@ -843,6 +974,53 @@
           }
         ],
         "summary": "Get credential status",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
+    "/api/v1/fleet-overview": {
+      "post": {
+        "description": "Return bounded request totals, server-error totals, and merged p95 request latency for up to 20 Cloud Run services using exactly two fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.",
+        "operationId": "fleet-overview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetOverviewInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetOverviewOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get Cloud Run fleet overview",
         "tags": [
           "LogLeopard"
         ]

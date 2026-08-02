@@ -170,4 +170,18 @@ export const mockClient: ApiClient = {
       ],
     };
   },
+  async fleetOverview(input, signal) {
+    await pause(220);
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    return {
+      start: input.start,
+      end: input.end,
+      services: (input.services ?? []).map((service, index) => ({
+        service,
+        requestCount: index === 2 ? 0 : 1840 - index * 615,
+        serverErrorCount: index === 0 ? 14 : index === 1 ? 3 : 0,
+        requestLatencyP95Ms: index === 1 ? null : 182 + index * 73,
+      })),
+    };
+  },
 };

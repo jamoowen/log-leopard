@@ -20,6 +20,7 @@ import {
   Command as CommandIcon,
   Database,
   History,
+  Layers3,
   Moon,
   PanelRightClose,
   Play,
@@ -56,6 +57,7 @@ import {
   type PollInterval,
   type Preferences,
   type SavedQuery,
+  type HealthWindow,
 } from "./preferences";
 import { compactValue, discoverFields, valueAtPath } from "./field-browser";
 import {
@@ -66,6 +68,7 @@ import {
 } from "./query-tools";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { FieldBrowser } from "./components/FieldBrowser";
+import { FleetOverview } from "./components/FleetOverview";
 import { JsonText } from "./components/JsonText";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ServiceHealth } from "./components/ServiceHealth";
@@ -143,7 +146,7 @@ function App() {
   const [saveName, setSaveName] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [executed, setExecuted] = useState<Execution | null>(null);
-  const [appView, setAppView] = useState<"health" | "logs">("health");
+  const [appView, setAppView] = useState<"fleet" | "health" | "logs">("fleet");
   const [healthRevision, setHealthRevision] = useState(0);
   const [pins, setPins] = useState<string[]>([]);
   const pairingToken = useRef(
@@ -237,6 +240,9 @@ function App() {
         void queryClient.resetQueries({ queryKey: ["sources", profile.id] });
         void queryClient.resetQueries({
           queryKey: ["service-health", profile.id],
+        });
+        void queryClient.resetQueries({
+          queryKey: ["fleet-overview", profile.id],
         });
       }
       update({ profileId: profile.id });
@@ -405,6 +411,15 @@ function App() {
     setContextSelected(null);
     setExecuted({ request, run: ++runRef.current });
     setAppView("logs");
+  }
+
+  function openFleetService(service: string, window: HealthWindow) {
+    if (!activeProfile) return;
+    saveHealthPreferences(activeProfile.id, { target: service, window });
+    setHealthRevision((revision) => revision + 1);
+    setSelected(null);
+    setContextSelected(null);
+    setAppView("health");
   }
 
   useEffect(() => {
@@ -715,6 +730,18 @@ function App() {
       <nav className="app-view-tabs" aria-label="Primary view">
         <button
           type="button"
+          className={appView === "fleet" ? "active" : ""}
+          aria-pressed={appView === "fleet"}
+          onClick={() => {
+            setSelected(null);
+            setContextSelected(null);
+            setAppView("fleet");
+          }}
+        >
+          <Layers3 size={13} /> Fleet overview
+        </button>
+        <button
+          type="button"
           className={appView === "health" ? "active" : ""}
           aria-pressed={appView === "health"}
           onClick={() => {
@@ -734,6 +761,21 @@ function App() {
           <Search size={13} /> Logs
         </button>
       </nav>
+
+      {appView === "fleet" && (
+        <FleetOverview
+          key={activeProfile?.id ?? "no-profile"}
+          profile={activeProfile}
+          sources={discoveredSources}
+          discoveryPending={sources.isPending}
+          discoveryError={
+            sources.error instanceof Error ? sources.error.message : undefined
+          }
+          discoveryWarning={sources.data?.warning}
+          sessionReady={sessionReady}
+          onOpenService={openFleetService}
+        />
+      )}
 
       {appView === "health" && (
         <ServiceHealth

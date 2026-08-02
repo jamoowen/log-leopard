@@ -63,3 +63,19 @@ func TestServiceHealthIsDeterministicAndBounded(t *testing.T) {
 		}
 	}
 }
+
+func TestFleetOverviewIsDeterministicAndOrdered(t *testing.T) {
+	start := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	req := provider.FleetOverviewRequest{Services: []string{"worker", "checkout-api"}, Start: start, End: start.Add(time.Hour)}
+	first, err := New().FleetOverview(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New().FleetOverview(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) || len(first.Services) != 2 || first.Services[0].Service != "checkout-api" || first.Services[1].Service != "worker" {
+		t.Fatalf("unexpected fake fleet result: %#v", first)
+	}
+}

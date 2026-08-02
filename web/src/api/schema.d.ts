@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fleet-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Cloud Run fleet overview
+         * @description Return bounded request totals, server-error totals, and merged p95 request latency for up to 20 Cloud Run services using exactly two fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.
+         */
+        post: operations["fleet-overview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles": {
         parameters: {
             query?: never;
@@ -320,6 +340,67 @@ export interface components {
             /** @description Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt. */
             value: unknown;
         };
+        FleetOverviewInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/FleetOverviewInputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: date-time
+             * @description Exclusive absolute end timestamp, no more than seven days after start.
+             */
+            end: string;
+            /** @description Connection profile ID; the project is resolved only from this stored profile. */
+            profileId: string;
+            /** @description Unique exact Cloud Run service names to summarize. */
+            services: string[] | null;
+            /**
+             * Format: date-time
+             * @description Inclusive absolute start timestamp.
+             */
+            start: string;
+        };
+        FleetOverviewOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/FleetOverviewOutputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: date-time
+             * @description Exclusive absolute end timestamp.
+             */
+            end: string;
+            /** @description One deterministic summary for every requested service, ordered by service name. */
+            services: components["schemas"]["FleetOverviewSummary"][] | null;
+            /**
+             * Format: date-time
+             * @description Inclusive absolute start timestamp.
+             */
+            start: string;
+        };
+        FleetOverviewSummary: {
+            /**
+             * Format: double
+             * @description Total requests observed in the window.
+             */
+            requestCount: number;
+            /**
+             * Format: double
+             * @description Merged p95 request latency in milliseconds, or null when no latency data is available.
+             */
+            requestLatencyP95Ms: number | null;
+            /**
+             * Format: double
+             * @description Total 5xx requests observed in the window.
+             */
+            serverErrorCount: number;
+            /** @description Requested Cloud Run service name. */
+            service: string;
+        };
         HTTPRequest: {
             /** @description Request latency as a protobuf duration. */
             latency?: string;
@@ -593,6 +674,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatusOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "fleet-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetOverviewInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetOverviewOutputBody"];
                 };
             };
             /** @description Error */

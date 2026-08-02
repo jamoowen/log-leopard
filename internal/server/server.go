@@ -41,6 +41,7 @@ type LogProvider interface {
 
 type HealthProvider interface {
 	ServiceHealth(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
+	FleetOverview(context.Context, provider.FleetOverviewRequest) (provider.FleetOverviewResult, error)
 }
 
 type Server struct {
@@ -203,6 +204,32 @@ type serviceHealthOutput struct {
 	}
 }
 
+type fleetServiceName string
+
+func (fleetServiceName) Schema(huma.Registry) *huma.Schema {
+	minLength, maxLength := 1, 49
+	return &huma.Schema{
+		Type: huma.TypeString, MinLength: &minLength, MaxLength: &maxLength,
+		Pattern: `^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$`,
+	}
+}
+
+type fleetOverviewInput struct {
+	Body struct {
+		ProfileID string             `json:"profileId" minLength:"1" maxLength:"128" doc:"Connection profile ID; the project is resolved only from this stored profile."`
+		Services  []fleetServiceName `json:"services" minItems:"1" maxItems:"20" uniqueItems:"true" doc:"Unique exact Cloud Run service names to summarize."`
+		Start     time.Time          `json:"start" doc:"Inclusive absolute start timestamp."`
+		End       time.Time          `json:"end" doc:"Exclusive absolute end timestamp, no more than seven days after start."`
+	}
+}
+type fleetOverviewOutput struct {
+	Body struct {
+		Start    time.Time                       `json:"start" doc:"Inclusive absolute start timestamp."`
+		End      time.Time                       `json:"end" doc:"Exclusive absolute end timestamp."`
+		Services []provider.FleetOverviewSummary `json:"services" maxItems:"20" doc:"One deterministic summary for every requested service, ordered by service name."`
+	}
+}
+
 func (s *Server) register() {
 	session := []map[string][]string{{"session": {}}}
 	huma.Register(s.API, operation("pair", http.MethodPost, "/api/v1/session/pair", "Pair browser session", "Exchange the single-use startup token for a local HttpOnly session cookie.", nil), s.pair)
@@ -216,6 +243,7 @@ func (s *Server) register() {
 	huma.Register(s.API, operation("query-logs", http.MethodPost, "/api/v1/query", "Query Cloud Run logs", "Query a bounded time window of Cloud Run revision logs and return normalized entries plus an opaque cursor.", session), s.queryLogs)
 	huma.Register(s.API, operation("request-context", http.MethodPost, "/api/v1/request-context", "Get request context", "Find up to 200 Cloud Run revision entries across all services in the profile project, within 15 minutes before or after the selected event, by exact known request ID or trace ID locations.", session), s.requestContext)
 	huma.Register(s.API, operation("service-health", http.MethodPost, "/api/v1/service-health", "Get Cloud Run service health", "Return bounded request counts, server-error counts, and merged p95 request latency for one Cloud Run service using fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.", session), s.serviceHealth)
+	huma.Register(s.API, operation("fleet-overview", http.MethodPost, "/api/v1/fleet-overview", "Get Cloud Run fleet overview", "Return bounded request totals, server-error totals, and merged p95 request latency for up to 20 Cloud Run services using exactly two fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.", session), s.fleetOverview)
 }
 
 func operation(id, method, path, summary, description string, security []map[string][]string) huma.Operation {
@@ -439,6 +467,50 @@ func (s *Server) serviceHealth(ctx context.Context, input *serviceHealthInput) (
 	out.Body.AlignmentSeconds = int64(result.Alignment / time.Second)
 	out.Body.Series = result.Series
 	if err := s.validateResponseSize(out.Body, "service health response exceeds the size limit; use a shorter time window"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Server) fleetOverview(ctx context.Context, input *fleetOverviewInput) (*fleetOverviewOutput, error) {
+	p, err := s.findProfile(input.Body.ProfileID)
+	if err != nil {
+		return nil, err
+	}
+	if len(input.Body.Services) < 1 || len(input.Body.Services) > provider.MaxFleetServices {
+		return nil, huma.Error400BadRequest("services must contain between 1 and 20 names")
+	}
+	seen := make(map[string]struct{}, len(input.Body.Services))
+	for _, service := range input.Body.Services {
+		if _, duplicate := seen[string(service)]; duplicate {
+			return nil, huma.Error400BadRequest("services must contain unique names")
+		}
+		seen[string(service)] = struct{}{}
+	}
+	if input.Body.Start.IsZero() || input.Body.End.IsZero() || !input.Body.Start.Before(input.Body.End) {
+		return nil, huma.Error400BadRequest("start must be before end")
+	}
+	if input.Body.End.Sub(input.Body.Start) > provider.MaxHealthWindow {
+		return nil, huma.Error400BadRequest("time window cannot exceed seven days")
+	}
+	services := make([]string, len(input.Body.Services))
+	for i, service := range input.Body.Services {
+		services[i] = string(service)
+	}
+	result, err := s.cfg.HealthProvider.FleetOverview(ctx, provider.FleetOverviewRequest{
+		ProjectID: p.ProjectID, Services: services, Start: input.Body.Start, End: input.Body.End,
+	})
+	if err != nil {
+		if errors.Is(err, provider.ErrResponseTooLarge) {
+			return nil, huma.Error422UnprocessableEntity("fleet overview response exceeds the size limit; request fewer services")
+		}
+		return nil, s.monitoringFailure("fleet_overview", err)
+	}
+	out := &fleetOverviewOutput{}
+	out.Body.Start = result.Start.UTC()
+	out.Body.End = result.End.UTC()
+	out.Body.Services = result.Services
+	if err := s.validateResponseSize(out.Body, "fleet overview response exceeds the size limit; request fewer services"); err != nil {
 		return nil, err
 	}
 	return out, nil

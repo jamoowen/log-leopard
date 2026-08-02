@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,19 @@ func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
 				t.Fatalf("discovery error leaked through warning: %q", got.Warning)
 			}
 		})
+	}
+}
+
+func TestNormalizeServiceNamesDeduplicatesRegionsAndSorts(t *testing.T) {
+	got := normalizeServiceNames([]string{
+		"projects/synthetic/locations/us-central1/services/worker",
+		"projects/synthetic/locations/europe-west1/services/api",
+		"projects/synthetic/locations/europe-west1/services/worker",
+		"",
+	})
+	want := []provider.Service{{ID: "api", Name: "api"}, {ID: "worker", Name: "worker"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("services = %#v, want %#v", got, want)
 	}
 }
 

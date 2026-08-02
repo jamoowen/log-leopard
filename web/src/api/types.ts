@@ -30,6 +30,12 @@ export type ServiceHealthRequest =
 export type ServiceHealthResponse =
   components["schemas"]["ServiceHealthOutputBody"];
 export type HealthPoint = components["schemas"]["HealthPoint"];
+export type FleetOverviewRequest =
+  components["schemas"]["FleetOverviewInputBody"];
+export type FleetOverviewResponse =
+  components["schemas"]["FleetOverviewOutputBody"];
+export type FleetOverviewSummary =
+  components["schemas"]["FleetOverviewSummary"];
 export type PairResponse = components["schemas"]["CookieOutputBody"];
 export type AuthStatus = components["schemas"]["AuthStatusOutputBody"];
 export type Problem = components["schemas"]["ErrorModel"];
@@ -65,6 +71,10 @@ export interface ApiClient {
     input: ServiceHealthRequest,
     signal?: AbortSignal,
   ): Promise<ServiceHealthResponse>;
+  fleetOverview(
+    input: FleetOverviewRequest,
+    signal?: AbortSignal,
+  ): Promise<FleetOverviewResponse>;
 }
 
 export class ApiError extends Error {

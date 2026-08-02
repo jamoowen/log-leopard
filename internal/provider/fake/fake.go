@@ -85,6 +85,22 @@ func (*Provider) ServiceHealth(_ context.Context, req provider.ServiceHealthRequ
 	}, nil
 }
 
+func (*Provider) FleetOverview(_ context.Context, req provider.FleetOverviewRequest) (provider.FleetOverviewResult, error) {
+	if req.Start.IsZero() || req.End.IsZero() || !req.Start.Before(req.End) || req.End.Sub(req.Start) > provider.MaxHealthWindow || len(req.Services) < 1 || len(req.Services) > provider.MaxFleetServices {
+		return provider.FleetOverviewResult{}, provider.ErrInvalidQuery
+	}
+	services := slices.Clone(req.Services)
+	slices.Sort(services)
+	summaries := make([]provider.FleetOverviewSummary, 0, len(services))
+	for i, service := range services {
+		latency := float64(95 + (i*37)%180)
+		summaries = append(summaries, provider.FleetOverviewSummary{
+			Service: service, RequestCount: float64(100 + i*17), ServerErrorCount: float64(i % 3), RequestLatencyP95Ms: &latency,
+		})
+	}
+	return provider.FleetOverviewResult{Start: req.Start.UTC(), End: req.End.UTC(), Services: summaries}, nil
+}
+
 func entries() []provider.Entry {
 	base := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	items := []struct {

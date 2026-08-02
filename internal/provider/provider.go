@@ -11,6 +11,7 @@ const (
 	MaxResponseBytes = 4 << 20
 	MaxHealthBuckets = 300
 	MaxHealthWindow  = 7 * 24 * time.Hour
+	MaxFleetServices = 20
 )
 
 var (
@@ -116,4 +117,24 @@ type ServiceHealthResult struct {
 	End       time.Time
 	Alignment time.Duration
 	Series    []HealthSeries
+}
+
+type FleetOverviewRequest struct {
+	ProjectID string
+	Services  []string
+	Start     time.Time
+	End       time.Time
+}
+
+type FleetOverviewSummary struct {
+	Service             string   `json:"service" doc:"Requested Cloud Run service name."`
+	RequestCount        float64  `json:"requestCount" minimum:"0" doc:"Total requests observed in the window."`
+	ServerErrorCount    float64  `json:"serverErrorCount" minimum:"0" doc:"Total 5xx requests observed in the window."`
+	RequestLatencyP95Ms *float64 `json:"requestLatencyP95Ms" nullable:"true" minimum:"0" doc:"Merged p95 request latency in milliseconds, or null when no latency data is available."`
+}
+
+type FleetOverviewResult struct {
+	Start    time.Time
+	End      time.Time
+	Services []FleetOverviewSummary
 }
