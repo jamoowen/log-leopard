@@ -79,7 +79,7 @@ export function ServiceHealth({
   const [initial] = useState(() => loadHealthPreferences(profile?.id ?? ""));
   const [selectedService, setSelectedService] = useState(initial.target);
   const [windowPreset, setWindowPreset] = useState(initial.window);
-  const [window, setWindow] = useState(() => metricWindow(initial.window));
+  const [windowRevision, setWindowRevision] = useState(0);
   const [view, setView] = useState<"workbench" | "timeline">("workbench");
   const [selectedIntervalEnd, setSelectedIntervalEnd] = useState("");
   const available = sources.filter((source) => source.id.trim());
@@ -88,22 +88,29 @@ export function ServiceHealth({
     : "";
   function selectService(target: string) {
     setSelectedService(target);
-    setWindow(metricWindow(windowPreset));
+    setWindowRevision((revision) => revision + 1);
     setView("workbench");
     setSelectedIntervalEnd("");
     saveHealthPreferences(profile!.id, { target, window: windowPreset });
   }
   function selectWindow(preset: HealthWindow) {
     setWindowPreset(preset);
-    setWindow(metricWindow(preset));
+    setWindowRevision((revision) => revision + 1);
     setView("workbench");
     setSelectedIntervalEnd("");
     saveHealthPreferences(profile!.id, { target: service, window: preset });
   }
   const health = useQuery({
-    queryKey: ["service-health", profile?.id, service, window],
-    queryFn: ({ signal }) =>
-      api.serviceHealth(
+    queryKey: [
+      "service-health",
+      profile?.id,
+      service,
+      windowPreset,
+      windowRevision,
+    ],
+    queryFn: ({ signal }) => {
+      const window = metricWindow(windowPreset);
+      return api.serviceHealth(
         {
           profileId: profile!.id,
           service,
@@ -111,7 +118,8 @@ export function ServiceHealth({
           end: window.end,
         },
         signal,
-      ),
+      );
+    },
     enabled: sessionReady && Boolean(profile && service),
   });
   const requests = healthSeriesPoints(health.data, "request_count");
@@ -132,7 +140,9 @@ export function ServiceHealth({
     (point) => point.timestamp === selectedIntervalEnd,
   )
     ? selectedIntervalEnd
-    : (highestError?.timestamp ?? window.end);
+    : (highestError?.timestamp ??
+      health.data?.end ??
+      metricWindow(windowPreset).end);
   const intervalStart = new Date(
     new Date(intervalEnd).getTime() -
       (health.data?.alignmentSeconds ?? 60) * 1000,

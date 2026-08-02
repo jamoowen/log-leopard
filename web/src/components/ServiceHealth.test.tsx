@@ -25,7 +25,7 @@ function renderHealth({
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={client}>
       <ServiceHealth
         profile={{
@@ -43,6 +43,7 @@ function renderHealth({
       />
     </QueryClientProvider>,
   );
+  return { ...rendered, client };
 }
 
 beforeEach(() => {
@@ -80,6 +81,42 @@ test("waits for an explicit target and can broaden an empty window", async () =>
   expect(
     JSON.parse(localStorage.getItem("logleopard.health-preferences.v1")!),
   ).toMatchObject({ staging: { target: "api", window: "24h" } });
+});
+
+test("recalculates the rolling window when metrics refetch", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-08-02T10:15:30Z"));
+    localStorage.setItem(
+      "logleopard.health-preferences.v1",
+      JSON.stringify({ staging: { target: "api", window: "1h" } }),
+    );
+    serviceHealth.mockImplementation(async (input) => ({
+      service: input.service,
+      start: input.start,
+      end: input.end,
+      alignmentSeconds: 60,
+      series: [
+        { name: "request_count", unit: "1", points: [] },
+        { name: "server_error_count", unit: "1", points: [] },
+      ],
+    }));
+    const { client } = renderHealth();
+    await waitFor(() => expect(serviceHealth).toHaveBeenCalledTimes(1));
+    expect(serviceHealth.mock.calls[0]![0].end).toBe(
+      "2026-08-02T10:15:00.000Z",
+    );
+
+    vi.setSystemTime(new Date("2026-08-02T10:27:30Z"));
+    await client.refetchQueries({ queryKey: ["service-health"] });
+
+    expect(serviceHealth).toHaveBeenCalledTimes(2);
+    expect(serviceHealth.mock.calls[1]![0].end).toBe(
+      "2026-08-02T10:27:00.000Z",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("distinguishes missing metrics permission from no traffic", async () => {
