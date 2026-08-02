@@ -10,6 +10,10 @@ test("fleet overview opens a selected service", async ({ page }) => {
     page.getByRole("table", { name: /Cloud Run fleet metrics/ }),
   ).toBeVisible();
   await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Sort fleet services" })
+    .selectOption("latency");
+  await expect(page.getByRole("row").nth(1)).toContainText("payments-api");
   const filter = page.getByRole("searchbox", {
     name: "Filter fleet services",
   });
