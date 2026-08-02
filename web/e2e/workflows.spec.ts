@@ -26,7 +26,6 @@ test("service health drills into the exact log interval", async ({
   await page.getByLabel("Health service").selectOption("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Service health" }).click();
   await expect(page.getByLabel("Health service")).toHaveValue("payments-api");
   await expect(page.getByText("REQUEST HEALTH", { exact: true })).toBeVisible();
   const chart = page.locator("button.service-health-chart").first();
@@ -91,6 +90,23 @@ test("service health drills into the exact log interval", async ({
   const end = await page.getByLabel("Custom end").inputValue();
   expect(new Date(end).getTime() - new Date(start).getTime()).toBe(60_000);
   await expect(page.getByText(/entries loaded/)).toBeVisible();
+});
+
+test("primary view survives reload and invalid values fall back safely", async ({
+  page,
+}) => {
+  await page.goto("/?mock=1&view=logs");
+  await expect(
+    page.getByRole("button", { name: "Logs", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "Query" })).toBeVisible();
+
+  await page.goto("/?mock=1&view=unexpected");
+  await expect(
+    page.getByRole("button", { name: "Fleet overview" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).not.toHaveURL(/view=/);
 });
 
 test("desktop query and inspector workflow", async ({ page }, testInfo) => {

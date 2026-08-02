@@ -96,6 +96,12 @@ const modeLabels: Record<QueryMode, string> = {
   native: "Native GCP",
 };
 const pollIntervals: PollInterval[] = [0, 5, 10, 30];
+type PrimaryView = "fleet" | "health" | "logs";
+
+function initialPrimaryView(): PrimaryView {
+  const view = new URLSearchParams(window.location.search).get("view");
+  return view === "health" || view === "logs" ? view : "fleet";
+}
 interface Execution {
   request: QueryRequest;
   run: number;
@@ -146,7 +152,7 @@ function App() {
   const [saveName, setSaveName] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [executed, setExecuted] = useState<Execution | null>(null);
-  const [appView, setAppView] = useState<"fleet" | "health" | "logs">("fleet");
+  const [appView, setAppView] = useState<PrimaryView>(initialPrimaryView);
   const [healthRevision, setHealthRevision] = useState(0);
   const [pins, setPins] = useState<string[]>([]);
   const pairingToken = useRef(
@@ -193,6 +199,14 @@ function App() {
     }
     void pairSession(token);
   }, []);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (appView === "fleet") url.searchParams.delete("view");
+    else url.searchParams.set("view", appView);
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, "", next);
+  }, [appView]);
 
   const authStatus = useQuery({
     queryKey: ["auth-status"],
