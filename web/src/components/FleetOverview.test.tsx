@@ -101,6 +101,16 @@ test("changes the bounded metric window", async () => {
   ).toBe(24 * 60 * 60_000);
 });
 
+test("refreshes fleet metrics explicitly", async () => {
+  const user = userEvent.setup();
+  renderFleet();
+  await screen.findByRole("table");
+
+  await user.click(screen.getByRole("button", { name: "Refresh metrics" }));
+
+  await waitFor(() => expect(fleetOverview).toHaveBeenCalledTimes(2));
+});
+
 test("shows a bounded discovery warning without hiding available services", async () => {
   renderFleet(
     undefined,

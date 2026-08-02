@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowUpRight, Layers3, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Layers3 } from "lucide-react";
 import { api } from "../api/client";
 import { ApiError, type Profile, type Source } from "../api/types";
 import { loadHealthPreferences, type HealthWindow } from "../preferences";
 import { formatCount, formatMetricValue } from "./metricFormat";
+import { MetricRefreshControl } from "./MetricRefreshControl";
 import "./fleet-overview.css";
 
 const maxFleetServices = 20;
@@ -93,6 +94,10 @@ export function FleetOverview({
     setWindowRevision((revision) => revision + 1);
   }
 
+  function refreshMetrics() {
+    setWindowRevision((revision) => revision + 1);
+  }
+
   if (!profile) {
     return (
       <main className="fleet-empty">
@@ -113,6 +118,12 @@ export function FleetOverview({
         <span className="fleet-delay">
           <i /> METRICS DELAYED ~2M
         </span>
+        <MetricRefreshControl
+          updatedAt={fleet.dataUpdatedAt}
+          refreshing={fleet.isFetching}
+          disabled={!serviceNames.length}
+          onRefresh={refreshMetrics}
+        />
         <div className="fleet-window" role="group" aria-label="Fleet window">
           {windows.map((item) => (
             <button
@@ -122,7 +133,6 @@ export function FleetOverview({
               aria-pressed={windowPreset === item.id}
               onClick={() => selectWindow(item.id)}
             >
-              {windowPreset === item.id && <RefreshCw size={12} />}
               {item.label}
             </button>
           ))}

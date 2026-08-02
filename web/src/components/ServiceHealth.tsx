@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Clock3,
-  RefreshCw,
   Search,
 } from "lucide-react";
 import { api } from "../api/client";
@@ -17,6 +16,7 @@ import type {
 } from "../api/types";
 import { ApiError } from "../api/types";
 import { HealthChart } from "./HealthChart";
+import { MetricRefreshControl } from "./MetricRefreshControl";
 import { formatCount, formatMetricValue } from "./metricFormat";
 import {
   loadHealthPreferences,
@@ -99,6 +99,11 @@ export function ServiceHealth({
     setView("workbench");
     setSelectedIntervalEnd("");
     saveHealthPreferences(profile!.id, { target: service, window: preset });
+  }
+  function refreshMetrics() {
+    setWindowRevision((revision) => revision + 1);
+    setView("workbench");
+    setSelectedIntervalEnd("");
   }
   const health = useQuery({
     queryKey: [
@@ -183,6 +188,12 @@ export function ServiceHealth({
         <span className="service-health-delay">
           <i /> METRICS DELAYED ~2M
         </span>
+        <MetricRefreshControl
+          updatedAt={health.dataUpdatedAt}
+          refreshing={health.isFetching}
+          disabled={!service}
+          onRefresh={refreshMetrics}
+        />
         <div
           className="service-health-window"
           role="group"
@@ -196,7 +207,6 @@ export function ServiceHealth({
               aria-pressed={windowPreset === item.id}
               onClick={() => selectWindow(item.id)}
             >
-              {windowPreset === item.id && <RefreshCw size={12} />}
               {item.label}
             </button>
           ))}
