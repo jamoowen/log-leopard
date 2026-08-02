@@ -44,6 +44,53 @@ func TestLiveQuery(t *testing.T) {
 	}
 }
 
+func TestLiveServiceHealth(t *testing.T) {
+	projectID := os.Getenv("LOG_LEOPARD_GCP_PROJECT")
+	if projectID == "" {
+		t.Skip("set LOG_LEOPARD_GCP_PROJECT to run the read-only live service-health smoke test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	services, err := discoverServices(ctx, projectID)
+	if err != nil {
+		t.Fatalf("live service discovery failed: category=%s", errorCategory(err))
+	}
+	if len(services) == 0 {
+		t.Skip("project has no Cloud Run services")
+	}
+	service := services[0].ID
+	requestedService := os.Getenv("LOG_LEOPARD_GCP_SERVICE")
+	if requestedService != "" {
+		service = ""
+		for _, candidate := range services {
+			if candidate.ID == requestedService {
+				service = candidate.ID
+				break
+			}
+		}
+		if service == "" {
+			t.Fatal("LOG_LEOPARD_GCP_SERVICE was not discovered in the configured project")
+		}
+	}
+	end := time.Now().UTC()
+	result, err := New().ServiceHealth(ctx, provider.ServiceHealthRequest{
+		ProjectID: projectID, Service: service, Start: end.Add(-24 * time.Hour), End: end, Alignment: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("live service health failed: category=%s", errorCategory(err))
+	}
+	if len(result.Series) != 3 || result.Series[0].Name != provider.HealthRequestCount || result.Series[1].Name != provider.HealthServerErrorCount || result.Series[2].Name != provider.HealthRequestLatencyP95 {
+		t.Fatal("live service health returned an unexpected shape")
+	}
+	if requestedService != "" {
+		for _, series := range result.Series {
+			if len(series.Points) == 0 {
+				t.Fatalf("explicit live service returned no %s points", series.Name)
+			}
+		}
+	}
+}
+
 func errorCategory(err error) string {
 	for name, target := range map[string]error{
 		"authentication":    provider.ErrAuthentication,

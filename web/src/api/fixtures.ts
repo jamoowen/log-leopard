@@ -61,6 +61,9 @@ export const fixtureEntries: LogEntry[] = Array.from(
         insertId: `synthetic-${index}`,
         severity,
         textPayload: message,
+        httpRequest: {
+          status: severity === "ERROR" || severity === "CRITICAL" ? 500 : 200,
+        },
         resource: {
           type: "cloud_run_revision",
           labels: { service_name: source },

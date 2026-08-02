@@ -4,10 +4,12 @@ import {
   clearSavedQueries,
   defaults,
   loadFieldPins,
+  loadHealthPreferences,
   loadHistory,
   loadPreferences,
   loadSavedQueries,
   saveFieldPins,
+  saveHealthPreferences,
   savePreferences,
   saveSavedQueries,
 } from "./preferences";
@@ -31,6 +33,37 @@ describe("preference persistence", () => {
     expect(localStorage.getItem("logleopard.preferences.v1")).not.toContain(
       "entries",
     );
+  });
+
+  it("remembers health targets and windows by connection", () => {
+    saveHealthPreferences("staging", { target: "api-stg", window: "24h" });
+    saveHealthPreferences("production", {
+      target: "api-prd",
+      window: "6h",
+    });
+
+    expect(loadHealthPreferences("staging")).toEqual({
+      target: "api-stg",
+      window: "24h",
+    });
+    expect(loadHealthPreferences("production")).toEqual({
+      target: "api-prd",
+      window: "6h",
+    });
+  });
+
+  it("rejects malformed health preferences", () => {
+    localStorage.setItem(
+      "logleopard.health-preferences.v1",
+      JSON.stringify({
+        staging: { target: ["api"], window: "forever" },
+      }),
+    );
+
+    expect(loadHealthPreferences("staging")).toEqual({
+      target: "",
+      window: "1h",
+    });
   });
 
   it("does not persist query drafts without explicit opt-in", () => {

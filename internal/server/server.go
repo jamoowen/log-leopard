@@ -23,13 +23,24 @@ import (
 )
 
 type Config struct {
-	Host     string
-	Origin   string
-	Profiles *profile.Store
-	Provider provider.Provider
-	Sessions *auth.Manager
-	Cursors  *cursor.Signer
-	Logger   *slog.Logger
+	Host           string
+	Origin         string
+	Profiles       *profile.Store
+	Provider       LogProvider
+	HealthProvider HealthProvider
+	Sessions       *auth.Manager
+	Cursors        *cursor.Signer
+	Logger         *slog.Logger
+}
+
+type LogProvider interface {
+	ADCStatus(context.Context) (bool, string)
+	Discover(context.Context, string) provider.Discovery
+	Query(context.Context, provider.QueryRequest) (provider.QueryResult, error)
+}
+
+type HealthProvider interface {
+	ServiceHealth(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
 }
 
 type Server struct {
@@ -45,7 +56,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Origin != "http://"+cfg.Host && cfg.Origin != "https://"+cfg.Host {
 		return nil, errors.New("origin must exactly match the listening host")
 	}
-	if cfg.Profiles == nil || cfg.Provider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
+	if cfg.Profiles == nil || cfg.Provider == nil || cfg.HealthProvider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
 		return nil, errors.New("server dependencies are required")
 	}
 	if cfg.Logger == nil {
@@ -174,6 +185,23 @@ type requestContextOutput struct {
 		Entries []provider.Entry `json:"entries" doc:"Matching Cloud Run revision entries across all services, in ascending timestamp order."`
 	}
 }
+type serviceHealthInput struct {
+	Body struct {
+		ProfileID string    `json:"profileId" minLength:"1" maxLength:"128" doc:"Connection profile ID; the project is resolved only from this stored profile."`
+		Service   string    `json:"service" minLength:"1" maxLength:"49" pattern:"^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$" doc:"Exact Cloud Run service name, aggregated across matching revisions and regions in the profile project."`
+		Start     time.Time `json:"start" doc:"Inclusive absolute start timestamp."`
+		End       time.Time `json:"end" doc:"Exclusive absolute end timestamp, no more than seven days after start."`
+	}
+}
+type serviceHealthOutput struct {
+	Body struct {
+		Service          string                  `json:"service" doc:"Requested Cloud Run service name."`
+		Start            time.Time               `json:"start" doc:"Inclusive absolute start timestamp."`
+		End              time.Time               `json:"end" doc:"Exclusive absolute end timestamp."`
+		AlignmentSeconds int64                   `json:"alignmentSeconds" minimum:"60" doc:"Server-selected metric bucket width in seconds."`
+		Series           []provider.HealthSeries `json:"series" maxItems:"3" doc:"Fixed request count, server-error count, and p95 request-latency series."`
+	}
+}
 
 func (s *Server) register() {
 	session := []map[string][]string{{"session": {}}}
@@ -187,6 +215,7 @@ func (s *Server) register() {
 	huma.Register(s.API, operation("discover-sources", http.MethodGet, "/api/v1/sources", "Discover Cloud Run services", "List Cloud Run services for a profile; an all-logs fallback and sanitized warning header are returned when discovery fails.", session), s.discover)
 	huma.Register(s.API, operation("query-logs", http.MethodPost, "/api/v1/query", "Query Cloud Run logs", "Query a bounded time window of Cloud Run revision logs and return normalized entries plus an opaque cursor.", session), s.queryLogs)
 	huma.Register(s.API, operation("request-context", http.MethodPost, "/api/v1/request-context", "Get request context", "Find up to 200 Cloud Run revision entries across all services in the profile project, within 15 minutes before or after the selected event, by exact known request ID or trace ID locations.", session), s.requestContext)
+	huma.Register(s.API, operation("service-health", http.MethodPost, "/api/v1/service-health", "Get Cloud Run service health", "Return bounded request counts, server-error counts, and merged p95 request latency for one Cloud Run service using fixed read-only Cloud Monitoring queries. Metrics can be delayed by approximately two minutes.", session), s.serviceHealth)
 }
 
 func operation(id, method, path, summary, description string, security []map[string][]string) huma.Operation {
@@ -381,6 +410,52 @@ func (s *Server) requestContext(ctx context.Context, input *requestContextInput)
 	return out, nil
 }
 
+func (s *Server) serviceHealth(ctx context.Context, input *serviceHealthInput) (*serviceHealthOutput, error) {
+	p, err := s.findProfile(input.Body.ProfileID)
+	if err != nil {
+		return nil, err
+	}
+	if input.Body.Start.IsZero() || input.Body.End.IsZero() || !input.Body.Start.Before(input.Body.End) {
+		return nil, huma.Error400BadRequest("start must be before end")
+	}
+	window := input.Body.End.Sub(input.Body.Start)
+	if window > provider.MaxHealthWindow {
+		return nil, huma.Error400BadRequest("time window cannot exceed seven days")
+	}
+	alignment := healthAlignment(window)
+	result, err := s.cfg.HealthProvider.ServiceHealth(ctx, provider.ServiceHealthRequest{
+		ProjectID: p.ProjectID, Service: input.Body.Service, Start: input.Body.Start, End: input.Body.End, Alignment: alignment,
+	})
+	if err != nil {
+		if errors.Is(err, provider.ErrResponseTooLarge) {
+			return nil, huma.Error422UnprocessableEntity("service health response exceeds the size limit; use a shorter time window")
+		}
+		return nil, s.monitoringFailure("service_health", err)
+	}
+	out := &serviceHealthOutput{}
+	out.Body.Service = result.Service
+	out.Body.Start = result.Start.UTC()
+	out.Body.End = result.End.UTC()
+	out.Body.AlignmentSeconds = int64(result.Alignment / time.Second)
+	out.Body.Series = result.Series
+	if err := s.validateResponseSize(out.Body, "service health response exceeds the size limit; use a shorter time window"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func healthAlignment(window time.Duration) time.Duration {
+	buckets := time.Duration(provider.MaxHealthBuckets)
+	alignment := window / buckets
+	if window%buckets != 0 {
+		alignment++
+	}
+	if alignment < time.Minute {
+		return time.Minute
+	}
+	return ((alignment + time.Minute - 1) / time.Minute) * time.Minute
+}
+
 func (s *Server) validateResponseSize(body any, message string) error {
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -448,6 +523,38 @@ func (s *Server) providerFailure(operation string, err error) error {
 		category = "configuration"
 		statusCode = http.StatusFailedDependency
 		message = "Cloud Logging is unavailable for this project. Verify the project ID and that the Cloud Logging API is enabled."
+	}
+	s.cfg.Logger.Error("provider request failed", "operation", operation, "category", category)
+	return huma.NewError(statusCode, message)
+}
+
+func (s *Server) monitoringFailure(operation string, err error) error {
+	category := "unknown"
+	statusCode := http.StatusInternalServerError
+	message := "service health could not be loaded"
+	switch {
+	case errors.Is(err, provider.ErrAuthentication):
+		category = "authentication"
+		statusCode = http.StatusFailedDependency
+		message = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+	case errors.Is(err, provider.ErrPermissionDenied):
+		category = "permission_denied"
+		statusCode = http.StatusForbidden
+		message = "The active Google Cloud identity cannot read metrics for this project. Grant roles/monitoring.viewer, then retry."
+	case errors.Is(err, provider.ErrRateLimited):
+		category = "rate_limited"
+		statusCode = http.StatusTooManyRequests
+		message = "Google Cloud temporarily rate-limited the metrics request. Wait briefly, then retry."
+	case errors.Is(err, provider.ErrUnavailable):
+		category = "unavailable"
+		statusCode = http.StatusServiceUnavailable
+		message = "Cloud Monitoring is temporarily unavailable. Retry shortly."
+	case errors.Is(err, provider.ErrConfiguration):
+		category = "configuration"
+		statusCode = http.StatusFailedDependency
+		message = "Cloud Monitoring is unavailable for this project. Verify the project ID and that the Cloud Monitoring API is enabled."
+	case errors.Is(err, provider.ErrInvalidQuery):
+		category = "invalid_fixed_query"
 	}
 	s.cfg.Logger.Error("provider request failed", "operation", operation, "category", category)
 	return huma.NewError(statusCode, message)

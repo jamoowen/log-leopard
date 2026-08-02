@@ -10,6 +10,7 @@ import * as Select from "@radix-ui/react-select";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   AlertCircle,
+  Activity,
   Bookmark,
   Check,
   ChevronDown,
@@ -49,6 +50,7 @@ import {
   loadPreferences,
   loadSavedQueries,
   saveFieldPins,
+  saveHealthPreferences,
   savePreferences,
   saveSavedQueries,
   type PollInterval,
@@ -66,6 +68,7 @@ import { CommandPalette, type Command } from "./components/CommandPalette";
 import { FieldBrowser } from "./components/FieldBrowser";
 import { JsonText } from "./components/JsonText";
 import { ProfileDialog } from "./components/ProfileDialog";
+import { ServiceHealth } from "./components/ServiceHealth";
 import { StructuredBuilder } from "./components/StructuredBuilder";
 
 const severities: Severity[] = [
@@ -110,6 +113,13 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function toDatetimeLocal(timestamp: string) {
+  const date = new Date(timestamp);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+
 function App() {
   const [prefs, setPrefs] = useState(loadPreferences);
   const [selected, setSelected] = useState<LogEntry | null>(null);
@@ -133,6 +143,8 @@ function App() {
   const [saveName, setSaveName] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [executed, setExecuted] = useState<Execution | null>(null);
+  const [appView, setAppView] = useState<"health" | "logs">("health");
+  const [healthRevision, setHealthRevision] = useState(0);
   const [pins, setPins] = useState<string[]>([]);
   const pairingToken = useRef(
     new URLSearchParams(window.location.hash.slice(1)).get("pair"),
@@ -217,7 +229,16 @@ function App() {
     mutationFn: ({ input, id }: { input: ProfileInput; id?: string }) =>
       api.saveProfile(input, id),
     onSuccess: (profile) => {
+      const previous = profileList?.find((item) => item.id === profile.id);
       void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+      if (previous && previous.projectId !== profile.projectId) {
+        saveHealthPreferences(profile.id, { target: "", window: "1h" });
+        setHealthRevision((revision) => revision + 1);
+        void queryClient.resetQueries({ queryKey: ["sources", profile.id] });
+        void queryClient.resetQueries({
+          queryKey: ["service-health", profile.id],
+        });
+      }
       update({ profileId: profile.id });
     },
   });
@@ -320,6 +341,7 @@ function App() {
 
   function execute(poll = false) {
     if (
+      appView !== "logs" ||
       !activeProfile ||
       !sessionReady ||
       inFlightRef.current ||
@@ -357,6 +379,34 @@ function App() {
   }
   executeRef.current = execute;
 
+  function openHealthLogs(service: string, start: string, end: string) {
+    if (!activeProfile) return;
+    const request: QueryRequest = {
+      profileId: activeProfile.id,
+      mode: "native",
+      query: "httpRequest.status >= 500 AND httpRequest.status < 600",
+      sources: [service],
+      severities: [],
+      start,
+      end,
+      limit: 80,
+    };
+    update({
+      sources: [service],
+      severities: [],
+      queryMode: "native",
+      drafts: { ...prefs.drafts, native: request.query ?? "" },
+      polling: 0,
+    });
+    setCustomStart(toDatetimeLocal(start));
+    setCustomEnd(toDatetimeLocal(end));
+    setCustomOpen(true);
+    setSelected(null);
+    setContextSelected(null);
+    setExecuted({ request, run: ++runRef.current });
+    setAppView("logs");
+  }
+
   useEffect(() => {
     if (!prefs.polling) return undefined;
     const timer = window.setInterval(() => {
@@ -376,7 +426,11 @@ function App() {
         event.preventDefault();
         setPaletteOpen(true);
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      if (
+        appView === "logs" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key === "Enter"
+      ) {
         event.preventDefault();
         executeRef.current(false);
       }
@@ -388,6 +442,7 @@ function App() {
         setHistoryOpen(false);
       }
       if (
+        appView === "logs" &&
         event.key === "/" &&
         !["INPUT", "TEXTAREA", "SELECT"].includes(
           (event.target as HTMLElement).tagName,
@@ -399,7 +454,7 @@ function App() {
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [paletteOpen]);
+  }, [appView, paletteOpen]);
 
   function toggleSource(id: string) {
     if (id)
@@ -499,21 +554,27 @@ function App() {
         ? "Polling paused · tab hidden"
         : `Polling every ${prefs.polling}s`;
   const commands: Command[] = [
-    {
-      id: "run",
-      label: "Run query",
-      group: "Query",
-      hint: "⌘↵",
-      run: () => executeRef.current(false),
-    },
-    {
-      id: "focus",
-      label: "Focus query editor",
-      group: "Query",
-      hint: "/",
-      run: () =>
-        document.querySelector<HTMLTextAreaElement>("#query-input")?.focus(),
-    },
+    ...(appView === "logs"
+      ? [
+          {
+            id: "run",
+            label: "Run query",
+            group: "Query",
+            hint: "⌘↵",
+            run: () => executeRef.current(false),
+          },
+          {
+            id: "focus",
+            label: "Focus query editor",
+            group: "Query",
+            hint: "/",
+            run: () =>
+              document
+                .querySelector<HTMLTextAreaElement>("#query-input")
+                ?.focus(),
+          },
+        ]
+      : []),
     {
       id: "theme",
       label: `Use ${prefs.theme === "dark" ? "light" : "dark"} theme`,
@@ -569,7 +630,7 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <img className="brand-mark" src="/log-leopard.png" alt="" />
-          <strong>LOGLEOPARD</strong>
+          <strong>Log Leopard</strong>
           <span className="edition">LOCAL</span>
         </div>
         <div className="top-actions">
@@ -651,7 +712,44 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
+      <nav className="app-view-tabs" aria-label="Primary view">
+        <button
+          type="button"
+          className={appView === "health" ? "active" : ""}
+          aria-pressed={appView === "health"}
+          onClick={() => {
+            setSelected(null);
+            setContextSelected(null);
+            setAppView("health");
+          }}
+        >
+          <Activity size={13} /> Service health
+        </button>
+        <button
+          type="button"
+          className={appView === "logs" ? "active" : ""}
+          aria-pressed={appView === "logs"}
+          onClick={() => setAppView("logs")}
+        >
+          <Search size={13} /> Logs
+        </button>
+      </nav>
+
+      {appView === "health" && (
+        <ServiceHealth
+          key={`${activeProfile?.id ?? "no-profile"}:${healthRevision}`}
+          profile={activeProfile}
+          sources={discoveredSources}
+          discoveryPending={sources.isPending}
+          discoveryError={
+            sources.error instanceof Error ? sources.error.message : undefined
+          }
+          discoveryWarning={sources.data?.warning}
+          sessionReady={sessionReady}
+          onOpenLogs={openHealthLogs}
+        />
+      )}
+      <main className="workspace" hidden={appView !== "logs"}>
         <section className="query-panel">
           <div className="control-strip">
             <div className="source-control">
@@ -1278,7 +1376,9 @@ function App() {
                       ref={rowVirtualizer.measureElement}
                       key={entry.id}
                       className={`log-row ${selected?.id === entry.id ? "selected" : ""} ${prefs.display} ${pins.length ? "with-pins" : ""}`}
-                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      style={{
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
                       onClick={() => {
                         setSelected(entry);
                         setInspectorTab("overview");

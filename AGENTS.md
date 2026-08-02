@@ -4,7 +4,7 @@
 
 - LogLeopard is a local-first browser UI for querying and reading cloud logs.
 - GCP Cloud Logging and Cloud Run are the only providers implemented initially.
-- Cloud logs remain the source of truth. Do not add ingestion, a log database, metrics, alerts, AI analysis, or AWS support without an explicit requirement.
+- Cloud Logging and Cloud Monitoring remain the sources of truth. Service health may use fixed, bounded built-in Cloud Run metrics; do not add ingestion, a log database, arbitrary metrics/dashboard building, alerts, AI analysis, or AWS support without an explicit requirement.
 
 ## Architecture
 
@@ -12,6 +12,7 @@
 - The React app under `web/` owns presentation and browser-local preferences. It must never receive cloud credentials.
 - Keep provider seams narrow: discovery, query, opaque cursor, normalized entry, raw entry, and capabilities.
 - GCP-specific semantics belong under `internal/provider/gcp`; do not force native provider filters into a universal query model.
+- Health targets are selected by connection provider and discovered workload kind. Adapters own metric names, filters, reducers, permissions, and setup requirements; browsers receive only normalized semantic signals.
 - Go API types are authoritative. Huma emits OpenAPI; `openapi-typescript` generates `web/src/api/schema.d.ts`. Never edit generated files manually.
 
 ## Security And Privacy
@@ -21,6 +22,7 @@
 - Treat all log contents and query text as hostile input. Render text, never injected HTML.
 - Keep the CSP restrictive and allowlist external link destinations.
 - Cloud operations are read-only. Local profile configuration may be written to the OS config directory.
+- Metric queries must remain fixed and bounded; never accept arbitrary Monitoring filters, reducers, or metric names from the browser.
 - Never persist returned log entries or print credentials, query text, project IDs, filters, or log contents in application logs.
 - Do not accept service-account key uploads.
 

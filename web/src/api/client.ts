@@ -5,6 +5,7 @@ import {
   type ProfileInput,
   type QueryRequest,
   type RequestContextRequest,
+  type ServiceHealthRequest,
   type SourceDiscovery,
   type SourceListResponse,
 } from "./types";
@@ -75,6 +76,12 @@ const httpClient: ApiClient = {
     }),
   requestContext: (input: RequestContextRequest, signal) =>
     request("/request-context", {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(signal ? { signal } : {}),
+    }),
+  serviceHealth: (input: ServiceHealthRequest, signal) =>
+    request("/service-health", {
       method: "POST",
       body: JSON.stringify(input),
       ...(signal ? { signal } : {}),
