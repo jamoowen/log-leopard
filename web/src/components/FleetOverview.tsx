@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowUpRight, Layers3 } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Layers3, Search, X } from "lucide-react";
 import { api } from "../api/client";
 import { ApiError, type Profile, type Source } from "../api/types";
 import { loadHealthPreferences, type HealthWindow } from "../preferences";
@@ -48,6 +48,7 @@ export function FleetOverview({
   const [initial] = useState(() => loadHealthPreferences(profile?.id ?? ""));
   const [windowPreset, setWindowPreset] = useState(initial.window);
   const [windowRevision, setWindowRevision] = useState(0);
+  const [serviceFilter, setServiceFilter] = useState("");
   const discovered = Array.from(
     new Map(
       sources
@@ -85,6 +86,10 @@ export function FleetOverview({
       b.requestCount - a.requestCount ||
       a.service.localeCompare(b.service),
   );
+  const normalizedFilter = serviceFilter.trim().toLowerCase();
+  const filteredRows = normalizedFilter
+    ? rows.filter((row) => row.service.toLowerCase().includes(normalizedFilter))
+    : rows;
   const totalRequests = rows.reduce((sum, row) => sum + row.requestCount, 0);
   const totalErrors = rows.reduce((sum, row) => sum + row.serverErrorCount, 0);
   const activeServices = rows.filter((row) => row.requestCount > 0).length;
@@ -198,6 +203,33 @@ export function FleetOverview({
             </div>
           </section>
           <section className="fleet-table-wrap">
+            <div className="fleet-table-toolbar">
+              <div>
+                <span>SERVICES</span>
+                <strong>
+                  {filteredRows.length} OF {rows.length}
+                </strong>
+              </div>
+              <div className="fleet-filter">
+                <Search size={13} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="Filter fleet services"
+                  placeholder="Filter services"
+                  value={serviceFilter}
+                  onChange={(event) => setServiceFilter(event.target.value)}
+                />
+                {serviceFilter && (
+                  <button
+                    type="button"
+                    aria-label="Clear service filter"
+                    onClick={() => setServiceFilter("")}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
             <div
               className="fleet-table"
               role="table"
@@ -210,7 +242,7 @@ export function FleetOverview({
                 <span role="columnheader">5xx rate</span>
                 <span role="columnheader">p95 latency</span>
               </div>
-              {rows.map((row) => {
+              {filteredRows.map((row) => {
                 const errorRate = row.requestCount
                   ? (row.serverErrorCount / row.requestCount) * 100
                   : 0;
@@ -251,6 +283,11 @@ export function FleetOverview({
                 );
               })}
             </div>
+            {normalizedFilter && filteredRows.length === 0 && (
+              <p className="fleet-no-match" role="status">
+                No services match “{serviceFilter.trim()}”.
+              </p>
+            )}
             {totalRequests === 0 && (
               <p className="fleet-quiet">
                 No traffic was observed for these services in the selected
