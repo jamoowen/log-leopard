@@ -119,6 +119,30 @@ test("recalculates the rolling window when metrics refetch", async () => {
   }
 });
 
+test("refreshes the selected service explicitly", async () => {
+  localStorage.setItem(
+    "logleopard.health-preferences.v1",
+    JSON.stringify({ staging: { target: "api", window: "1h" } }),
+  );
+  serviceHealth.mockImplementation(async (input) => ({
+    service: input.service,
+    start: input.start,
+    end: input.end,
+    alignmentSeconds: 60,
+    series: [
+      { name: "request_count", unit: "1", points: [] },
+      { name: "server_error_count", unit: "1", points: [] },
+    ],
+  }));
+  const user = userEvent.setup();
+  renderHealth();
+  await screen.findByText("No traffic observed");
+
+  await user.click(screen.getByRole("button", { name: "Refresh metrics" }));
+
+  await waitFor(() => expect(serviceHealth).toHaveBeenCalledTimes(2));
+});
+
 test("distinguishes missing metrics permission from no traffic", async () => {
   serviceHealth.mockRejectedValue(
     new ApiError("Grant roles/monitoring.viewer, then retry.", 403),

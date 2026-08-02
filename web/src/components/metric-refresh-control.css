@@ -1,0 +1,63 @@
+.metric-refresh,
+.metric-refresh > button {
+  display: flex;
+  align-items: center;
+}
+
+.metric-refresh {
+  gap: 7px;
+}
+
+.metric-refresh-status {
+  min-width: 76px;
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
+.metric-refresh > button {
+  height: 30px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.metric-refresh > button:hover:not(:disabled) {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.metric-refresh .spinning {
+  animation: metric-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes metric-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .metric-refresh-status {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .metric-refresh > button {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .metric-refresh > button > span {
+    display: none;
+  }
+}
