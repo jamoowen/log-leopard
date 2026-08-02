@@ -119,6 +119,31 @@ test("primary view survives reload and invalid values fall back safely", async (
   await expect(page).not.toHaveURL(/view=/);
 });
 
+test("command palette navigates primary views", async ({ page }) => {
+  await page.goto("/?mock=1");
+
+  await page.keyboard.press("Control+k");
+  await page.getByLabel("Search commands").fill("service health");
+  await page.getByRole("button", { name: /Open Service health/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Service health" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/view=health/);
+
+  await page.keyboard.press("Control+k");
+  await page.getByLabel("Search commands").fill("open logs");
+  await page.getByRole("button", { name: /Open Logs/ }).click();
+  await expect(page.getByRole("textbox", { name: "Query" })).toBeVisible();
+  await expect(page).toHaveURL(/view=logs/);
+
+  await page.keyboard.press("Control+k");
+  await page.getByLabel("Search commands").fill("fleet overview");
+  await page.getByRole("button", { name: /Open Fleet overview/ }).click();
+  await page.keyboard.press("Control+k");
+  await page.getByLabel("Search commands").fill("run query");
+  await expect(page.getByText("No matching command.")).toBeVisible();
+});
+
 test("desktop query and inspector workflow", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/?mock=1");
