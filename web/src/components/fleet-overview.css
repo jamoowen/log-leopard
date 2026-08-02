@@ -123,6 +123,8 @@
 
 .fleet-table-toolbar,
 .fleet-table-toolbar > div,
+.fleet-table-actions,
+.fleet-sort,
 .fleet-filter {
   display: flex;
   align-items: center;
@@ -158,8 +160,44 @@
   font-weight: 500;
 }
 
+.fleet-table-actions {
+  width: min(470px, 65%);
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fleet-sort {
+  height: 30px;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.fleet-sort:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.fleet-sort > span {
+  color: var(--faint);
+  font:
+    8px "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.fleet-sort select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+}
+
 .fleet-filter {
-  width: min(260px, 45%);
+  min-width: 0;
+  flex: 1;
   height: 30px;
   gap: 7px;
   padding: 0 8px;
@@ -363,14 +401,23 @@
   }
 
   .fleet-table-toolbar {
+    flex-wrap: wrap;
     margin-bottom: 8px;
     padding: 0;
     border: 0;
     background: transparent;
   }
 
+  .fleet-table-actions {
+    width: 100%;
+  }
+
+  .fleet-sort {
+    flex: 0 0 auto;
+  }
+
   .fleet-filter {
-    width: min(230px, 62%);
+    width: auto;
     background: var(--surface);
   }
 

@@ -136,6 +136,21 @@ test("filters services locally and clears the filter", async () => {
   expect(screen.getByRole("button", { name: /api/ })).toBeVisible();
 });
 
+test("sorts services locally and keeps missing latency last", async () => {
+  const user = userEvent.setup();
+  renderFleet();
+  await screen.findByRole("table");
+  const sort = screen.getByRole("combobox", { name: "Sort fleet services" });
+
+  expect(screen.getAllByRole("row")[1]).toHaveTextContent("worker");
+  await user.selectOptions(sort, "requests");
+  expect(screen.getAllByRole("row")[1]).toHaveTextContent("api");
+  await user.selectOptions(sort, "latency");
+  expect(screen.getAllByRole("row")[1]).toHaveTextContent("api");
+  expect(screen.getAllByRole("row")[2]).toHaveTextContent("worker");
+  expect(fleetOverview).toHaveBeenCalledTimes(1);
+});
+
 test("shows a bounded discovery warning without hiding available services", async () => {
   renderFleet(
     undefined,

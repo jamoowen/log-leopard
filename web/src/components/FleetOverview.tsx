@@ -9,6 +9,7 @@ import { MetricRefreshControl } from "./MetricRefreshControl";
 import "./fleet-overview.css";
 
 const maxFleetServices = 20;
+type FleetSort = "errors" | "requests" | "latency" | "name";
 const windows: { id: HealthWindow; label: string; milliseconds: number }[] = [
   { id: "1h", label: "1h", milliseconds: 60 * 60_000 },
   { id: "6h", label: "6h", milliseconds: 6 * 60 * 60_000 },
@@ -49,6 +50,7 @@ export function FleetOverview({
   const [windowPreset, setWindowPreset] = useState(initial.window);
   const [windowRevision, setWindowRevision] = useState(0);
   const [serviceFilter, setServiceFilter] = useState("");
+  const [serviceSort, setServiceSort] = useState<FleetSort>("errors");
   const discovered = Array.from(
     new Map(
       sources
@@ -80,12 +82,32 @@ export function FleetOverview({
     },
     enabled: sessionReady && Boolean(profile && serviceNames.length),
   });
-  const rows = [...(fleet.data?.services ?? [])].sort(
-    (a, b) =>
-      b.serverErrorCount - a.serverErrorCount ||
-      b.requestCount - a.requestCount ||
-      a.service.localeCompare(b.service),
-  );
+  const rows = [...(fleet.data?.services ?? [])].sort((a, b) => {
+    switch (serviceSort) {
+      case "requests":
+        return (
+          b.requestCount - a.requestCount || a.service.localeCompare(b.service)
+        );
+      case "latency":
+        if (a.requestLatencyP95Ms === null)
+          return b.requestLatencyP95Ms === null
+            ? a.service.localeCompare(b.service)
+            : 1;
+        if (b.requestLatencyP95Ms === null) return -1;
+        return (
+          b.requestLatencyP95Ms - a.requestLatencyP95Ms ||
+          a.service.localeCompare(b.service)
+        );
+      case "name":
+        return a.service.localeCompare(b.service);
+      default:
+        return (
+          b.serverErrorCount - a.serverErrorCount ||
+          b.requestCount - a.requestCount ||
+          a.service.localeCompare(b.service)
+        );
+    }
+  });
   const normalizedFilter = serviceFilter.trim().toLowerCase();
   const filteredRows = normalizedFilter
     ? rows.filter((row) => row.service.toLowerCase().includes(normalizedFilter))
@@ -210,24 +232,41 @@ export function FleetOverview({
                   {filteredRows.length} OF {rows.length}
                 </strong>
               </div>
-              <div className="fleet-filter">
-                <Search size={13} aria-hidden="true" />
-                <input
-                  type="search"
-                  aria-label="Filter fleet services"
-                  placeholder="Filter services"
-                  value={serviceFilter}
-                  onChange={(event) => setServiceFilter(event.target.value)}
-                />
-                {serviceFilter && (
-                  <button
-                    type="button"
-                    aria-label="Clear service filter"
-                    onClick={() => setServiceFilter("")}
+              <div className="fleet-table-actions">
+                <label className="fleet-sort">
+                  <span>SORT</span>
+                  <select
+                    aria-label="Sort fleet services"
+                    value={serviceSort}
+                    onChange={(event) =>
+                      setServiceSort(event.target.value as FleetSort)
+                    }
                   >
-                    <X size={12} />
-                  </button>
-                )}
+                    <option value="errors">Most 5xx</option>
+                    <option value="requests">Most requests</option>
+                    <option value="latency">Slowest p95</option>
+                    <option value="name">Service name</option>
+                  </select>
+                </label>
+                <div className="fleet-filter">
+                  <Search size={13} aria-hidden="true" />
+                  <input
+                    type="search"
+                    aria-label="Filter fleet services"
+                    placeholder="Filter services"
+                    value={serviceFilter}
+                    onChange={(event) => setServiceFilter(event.target.value)}
+                  />
+                  {serviceFilter && (
+                    <button
+                      type="button"
+                      aria-label="Clear service filter"
+                      onClick={() => setServiceFilter("")}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             <div
