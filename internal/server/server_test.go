@@ -169,7 +169,7 @@ func TestHostOriginAndOpenAPI(t *testing.T) {
 	for _, want := range []string{
 		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`, `"summary":"Get Cloud Run fleet overview"`,
 		`"description":"Exact payload path selected for message."`, `"description":"Exact structured-field comparison operator."`,
-		`"X-LogLeopard-Warning"`,
+		`"X-LogLeopard-Warning"`, `"X-LogLeopard-Warning-Code"`,
 	} {
 		if !bytes.Contains(w.Body.Bytes(), []byte(want)) {
 			t.Errorf("OpenAPI is missing %s", want)
@@ -181,8 +181,9 @@ type warningProvider struct{ *fake.Provider }
 
 func (warningProvider) Discover(context.Context, string) providerapi.Discovery {
 	return providerapi.Discovery{
-		Services: []providerapi.Service{{ID: "", Name: "All logs"}},
-		Warning:  "Cloud Run discovery is unavailable; manual and all-logs queries still work.",
+		Services:    []providerapi.Service{{ID: "", Name: "All logs"}},
+		Warning:     "Google Cloud authentication is unavailable or expired.",
+		WarningCode: providerapi.DiscoveryWarningAuthentication,
 	}
 }
 
@@ -201,6 +202,9 @@ func TestDiscoveryPreservesSanitizedWarningWithoutChangingBodyShape(t *testing.T
 	}
 	if got := w.Header().Get("X-LogLeopard-Warning"); got == "" {
 		t.Fatal("discovery warning header was dropped")
+	}
+	if got := w.Header().Get("X-LogLeopard-Warning-Code"); got != "authentication" {
+		t.Fatalf("discovery warning code = %q", got)
 	}
 	var sources []sourceResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &sources); err != nil || len(sources) != 1 {

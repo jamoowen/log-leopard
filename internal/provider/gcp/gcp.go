@@ -44,7 +44,12 @@ func (p *Provider) Discover(ctx context.Context, projectID string) provider.Disc
 	discovery := provider.Discovery{Services: []provider.Service{{ID: "", Name: "All logs"}}}
 	services, err := p.discoverServices(ctx, projectID)
 	if err != nil {
-		discovery.Warning = "Cloud Run discovery is unavailable; manual and all-logs queries still work."
+		if errors.Is(err, provider.ErrAuthentication) {
+			discovery.Warning = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+			discovery.WarningCode = provider.DiscoveryWarningAuthentication
+		} else {
+			discovery.Warning = "Cloud Run discovery is unavailable; manual and all-logs queries still work."
+		}
 		return discovery
 	}
 	if len(services) > provider.MaxDiscoveredServices {
@@ -70,7 +75,7 @@ func discoverServices(ctx context.Context, projectID string) ([]provider.Service
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("list Cloud Run services: %w", err)
+			return nil, fmt.Errorf("list Cloud Run services: %w", classifyError(err))
 		}
 		resourceName := service.GetName()
 		name := resourceName

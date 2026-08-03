@@ -15,6 +15,8 @@ const severities: Severity[] = [
   "WARNING",
   "ERROR",
   "CRITICAL",
+  "ALERT",
+  "EMERGENCY",
 ];
 const presets = new Set(["5m", "15m", "1h", "6h", "24h", "7d"]);
 const predicateOperators = new Set<FieldPredicate["operator"]>([

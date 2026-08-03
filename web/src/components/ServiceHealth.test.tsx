@@ -18,9 +18,15 @@ const sources: Source[] = [
 function renderHealth({
   availableSources = sources,
   discoveryError,
+  discoveryWarning,
+  discoveryWarningCode,
+  profileStatus = "ready",
 }: {
   availableSources?: Source[];
   discoveryError?: string;
+  discoveryWarning?: string;
+  discoveryWarningCode?: "authentication";
+  profileStatus?: "ready" | "needs-auth";
 } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -33,11 +39,13 @@ function renderHealth({
           name: "Staging",
           projectId: "sample-project",
           provider: "gcp",
-          status: "ready",
+          status: profileStatus,
         }}
         sources={availableSources}
         discoveryPending={false}
         {...(discoveryError ? { discoveryError } : {})}
+        {...(discoveryWarning ? { discoveryWarning } : {})}
+        {...(discoveryWarningCode ? { discoveryWarningCode } : {})}
         sessionReady
         onOpenLogs={() => undefined}
       />
@@ -164,6 +172,31 @@ test("distinguishes failed discovery from a project without targets", () => {
 
   expect(screen.getByText("Service discovery unavailable")).toBeVisible();
   expect(screen.queryByText("No Cloud Run services discovered")).toBeNull();
+});
+
+test("explains when Google Cloud authentication is required", () => {
+  renderHealth({ availableSources: [], profileStatus: "needs-auth" });
+
+  expect(
+    screen.getByText("Google Cloud authentication required"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/gcloud auth application-default login/),
+  ).toBeVisible();
+  expect(screen.queryByText("No Cloud Run services discovered")).toBeNull();
+});
+
+test("explains an authentication failure reported by discovery", () => {
+  renderHealth({
+    availableSources: [],
+    discoveryWarning:
+      "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry.",
+    discoveryWarningCode: "authentication",
+  });
+
+  expect(
+    screen.getByText("Google Cloud authentication required"),
+  ).toBeVisible();
 });
 
 test("does not present a missing latency observation as zero", async () => {

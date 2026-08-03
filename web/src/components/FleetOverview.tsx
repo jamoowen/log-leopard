@@ -6,6 +6,7 @@ import { ApiError, type Profile, type Source } from "../api/types";
 import { loadHealthPreferences, type HealthWindow } from "../preferences";
 import { formatCount, formatMetricValue } from "./metricFormat";
 import { MetricRefreshControl } from "./MetricRefreshControl";
+import { googleCloudAuthenticationMessage } from "./cloudErrors";
 import "./fleet-overview.css";
 
 const maxFleetServices = 20;
@@ -33,6 +34,7 @@ interface Props {
   discoveryPending: boolean;
   discoveryError?: string | undefined;
   discoveryWarning?: string | undefined;
+  discoveryWarningCode?: "authentication" | undefined;
   sessionReady: boolean;
   onOpenService: (service: string, window: HealthWindow) => void;
 }
@@ -43,6 +45,7 @@ export function FleetOverview({
   discoveryPending,
   discoveryError,
   discoveryWarning,
+  discoveryWarningCode,
   sessionReady,
   onOpenService,
 }: Props) {
@@ -60,6 +63,9 @@ export function FleetOverview({
   ).sort((a, b) => a.id.localeCompare(b.id));
   const fleetSources = discovered.slice(0, maxFleetServices);
   const serviceNames = fleetSources.map((source) => source.id);
+  const authenticationRequired =
+    profile?.status === "needs-auth" ||
+    discoveryWarningCode === "authentication";
   const fleet = useQuery({
     queryKey: [
       "fleet-overview",
@@ -80,7 +86,8 @@ export function FleetOverview({
         signal,
       );
     },
-    enabled: sessionReady && Boolean(profile && serviceNames.length),
+    enabled:
+      sessionReady && !authenticationRequired && Boolean(serviceNames.length),
   });
   const rows = [...(fleet.data?.services ?? [])].sort((a, b) => {
     switch (serviceSort) {
@@ -166,7 +173,12 @@ export function FleetOverview({
         </div>
       </header>
 
-      {discoveryPending ? (
+      {authenticationRequired ? (
+        <FleetError
+          title="Google Cloud authentication required"
+          detail={googleCloudAuthenticationMessage}
+        />
+      ) : discoveryPending ? (
         <FleetMessage>Discovering Cloud Run services...</FleetMessage>
       ) : discoveryError ? (
         <FleetError

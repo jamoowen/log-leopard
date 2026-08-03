@@ -1027,6 +1027,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-LogLeopard-Warning"?: string;
+                    "X-LogLeopard-Warning-Code"?: string;
                     [name: string]: unknown;
                 };
                 content: {

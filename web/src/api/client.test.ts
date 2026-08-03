@@ -19,6 +19,7 @@ describe("source discovery client", () => {
         headers: {
           "Content-Type": "application/json",
           "X-LogLeopard-Warning": "No concrete services found",
+          "X-LogLeopard-Warning-Code": "authentication",
         },
       }),
     );
@@ -26,6 +27,7 @@ describe("source discovery client", () => {
     await expect(requestSourceDiscovery("profile/id")).resolves.toEqual({
       sources: [],
       warning: "No concrete services found",
+      warningCode: "authentication",
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/v1/sources?profileId=profile%2Fid",

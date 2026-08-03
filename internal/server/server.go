@@ -143,8 +143,9 @@ type sourceResponse struct {
 	Kind  string `json:"kind" enum:"cloud-run,log" doc:"Source selector kind."`
 }
 type servicesOutput struct {
-	Warning string `header:"X-LogLeopard-Warning" doc:"Sanitized discovery fallback warning, when discovery was incomplete."`
-	Body    []sourceResponse
+	Warning     string                        `header:"X-LogLeopard-Warning" doc:"Sanitized discovery fallback warning, when discovery was incomplete."`
+	WarningCode provider.DiscoveryWarningCode `header:"X-LogLeopard-Warning-Code" doc:"Stable category for a discovery warning, when remediation depends on its cause."`
+	Body        []sourceResponse
 }
 type authStatusOutput struct {
 	Body struct {
@@ -334,7 +335,10 @@ func (s *Server) discover(ctx context.Context, input *sourcesInput) (*servicesOu
 		return nil, err
 	}
 	discovery := s.cfg.Provider.Discover(ctx, p.ProjectID)
-	out := &servicesOutput{Warning: discovery.Warning, Body: make([]sourceResponse, 0, len(discovery.Services))}
+	out := &servicesOutput{
+		Warning: discovery.Warning, WarningCode: discovery.WarningCode,
+		Body: make([]sourceResponse, 0, len(discovery.Services)),
+	}
 	for _, service := range discovery.Services {
 		kind := "cloud-run"
 		if service.ID == "" {

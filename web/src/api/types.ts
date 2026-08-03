@@ -17,6 +17,7 @@ export type SourceListResponse = JsonResponse<"/api/v1/sources", "get">;
 export interface SourceDiscovery {
   sources: SourceListResponse;
   warning?: string;
+  warningCode?: "authentication";
 }
 export type QueryRequest = components["schemas"]["QueryInputBody"];
 export type FieldPredicate = components["schemas"]["FieldPredicate"];
@@ -54,7 +55,9 @@ export type Severity =
   | "NOTICE"
   | "WARNING"
   | "ERROR"
-  | "CRITICAL";
+  | "CRITICAL"
+  | "ALERT"
+  | "EMERGENCY";
 
 export interface ApiClient {
   pair(token: string): Promise<PairResponse>;

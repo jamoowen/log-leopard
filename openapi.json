@@ -1489,6 +1489,12 @@
                   "description": "Sanitized discovery fallback warning, when discovery was incomplete.",
                   "type": "string"
                 }
+              },
+              "X-LogLeopard-Warning-Code": {
+                "schema": {
+                  "description": "Stable category for a discovery warning, when remediation depends on its cause.",
+                  "type": "string"
+                }
               }
             }
           },

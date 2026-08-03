@@ -189,6 +189,121 @@ test("load more appends the next result page", async ({ page }, testInfo) => {
   await expect(page.getByRole("button", { name: "Load more" })).toBeHidden();
 });
 
+test("editing query controls marks loaded results as stale", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await openLogs(page);
+  await page.getByRole("button", { name: "1 hour" }).click();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("80 entries loaded")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Query" }).fill("Request");
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more" })).toBeDisabled();
+
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: "ERROR", exact: true }).click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: "15 min", exact: true }).click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: /All sources/ }).click();
+  await page.getByText("payments-api", { exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: "Native GCP" }).click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: "Custom" }).click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: "15 min", exact: true }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+
+  await page.getByRole("button", { name: "Structured builder" }).click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("Results from previous query")).toBeHidden();
+  await page
+    .getByRole("button", { name: /Add the first structured condition/ })
+    .click();
+  await expect(page.getByText("Results from previous query")).toBeVisible();
+});
+
+test("all canonical severities are available as filters", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await openLogs(page);
+
+  const defaultFilter = page.getByRole("button", {
+    name: "DEFAULT",
+    exact: true,
+  });
+  const alertFilter = page.getByRole("button", {
+    name: "ALERT",
+    exact: true,
+  });
+  const emergencyFilter = page.getByRole("button", {
+    name: "EMERGENCY",
+    exact: true,
+  });
+  await defaultFilter.click();
+  await alertFilter.click();
+  await emergencyFilter.click();
+  await expect(defaultFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(alertFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(emergencyFilter).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("No matching entries")).toBeVisible();
+});
+
+test("saved queries and query history are mutually exclusive", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await openLogs(page);
+  const saved = page.getByRole("button", { name: "Saved queries" });
+  const history = page.getByRole("button", { name: "Query history" });
+
+  await saved.click();
+  await expect(
+    page.getByRole("dialog", { name: "Saved queries" }),
+  ).toBeVisible();
+  await history.click();
+  await expect(
+    page.getByRole("dialog", { name: "Query history" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Saved queries" }),
+  ).toBeHidden();
+  await expect(saved).toHaveAttribute("aria-expanded", "false");
+
+  await saved.click();
+  await expect(
+    page.getByRole("dialog", { name: "Saved queries" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Query history" }),
+  ).toBeHidden();
+  await expect(history).toHaveAttribute("aria-expanded", "false");
+});
+
 test("identical custom requests refetch and polling does not lock execution", async ({
   page,
 }, testInfo) => {

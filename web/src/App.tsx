@@ -75,12 +75,15 @@ import { ServiceHealth } from "./components/ServiceHealth";
 import { StructuredBuilder } from "./components/StructuredBuilder";
 
 const severities: Severity[] = [
+  "DEFAULT",
   "DEBUG",
   "INFO",
   "NOTICE",
   "WARNING",
   "ERROR",
   "CRITICAL",
+  "ALERT",
+  "EMERGENCY",
 ];
 const presets = [
   { id: "5m", label: "5 min", ms: 300_000 },
@@ -105,6 +108,23 @@ function initialPrimaryView(): PrimaryView {
 interface Execution {
   request: QueryRequest;
   run: number;
+  draftSignature: string;
+}
+
+function queryDraftSignature(input: {
+  profileId: string;
+  mode: QueryMode;
+  sources: string[];
+  severities: Severity[];
+  query?: string;
+  predicates?: unknown;
+  range: string[];
+}) {
+  return JSON.stringify({
+    ...input,
+    sources: [...input.sources].sort(),
+    severities: [...input.severities].sort(),
+  });
 }
 
 function formatTime(timestamp: string, timezone: Preferences["timezone"]) {
@@ -326,6 +346,21 @@ function App() {
   const customRangeInvalid = customRangeError !== null;
   const predicates = prefs.predicateDrafts.map(toPredicate);
   const predicatesValid = predicates.every(Boolean) && predicates.length <= 50;
+  const currentDraftSignature = queryDraftSignature({
+    profileId: activeProfile?.id ?? "",
+    mode: prefs.queryMode,
+    sources: selectedSources,
+    severities: prefs.severities,
+    ...(prefs.queryMode === "structured"
+      ? { predicates: prefs.predicateDrafts }
+      : { query: prefs.drafts[prefs.queryMode] }),
+    range: customOpen
+      ? ["custom", customStart, customEnd]
+      : ["preset", prefs.preset],
+  });
+  const resultsStale = Boolean(
+    activeExecution && activeExecution.draftSignature !== currentDraftSignature,
+  );
 
   const context = useQuery({
     queryKey: [
@@ -405,7 +440,22 @@ function App() {
     };
     setSelected(null);
     setContextSelected(null);
-    setExecuted({ request, run: ++runRef.current });
+    setExecuted({
+      request,
+      run: ++runRef.current,
+      draftSignature: queryDraftSignature({
+        profileId: activeProfile.id,
+        mode: prefs.queryMode,
+        sources: selectedSources,
+        severities: prefs.severities,
+        ...(prefs.queryMode === "structured"
+          ? { predicates: prefs.predicateDrafts }
+          : { query: prefs.drafts[prefs.queryMode] }),
+        range: useCustom
+          ? ["custom", customStart, customEnd]
+          : ["preset", prefs.preset],
+      }),
+    });
     if (!poll && prefs.historyEnabled && prefs.queryMode !== "structured") {
       addHistory(request.query ?? "");
       setHistory(loadHistory());
@@ -415,6 +465,8 @@ function App() {
 
   function openHealthLogs(service: string, start: string, end: string) {
     if (!activeProfile) return;
+    const customStartValue = toDatetimeLocal(start);
+    const customEndValue = toDatetimeLocal(end);
     const request: QueryRequest = {
       profileId: activeProfile.id,
       mode: "native",
@@ -432,12 +484,23 @@ function App() {
       drafts: { ...prefs.drafts, native: request.query ?? "" },
       polling: 0,
     });
-    setCustomStart(toDatetimeLocal(start));
-    setCustomEnd(toDatetimeLocal(end));
+    setCustomStart(customStartValue);
+    setCustomEnd(customEndValue);
     setCustomOpen(true);
     setSelected(null);
     setContextSelected(null);
-    setExecuted({ request, run: ++runRef.current });
+    setExecuted({
+      request,
+      run: ++runRef.current,
+      draftSignature: queryDraftSignature({
+        profileId: activeProfile.id,
+        mode: "native",
+        sources: [service],
+        severities: [],
+        query: request.query ?? "",
+        range: ["custom", customStartValue, customEndValue],
+      }),
+    });
     setAppView("logs");
   }
 
@@ -831,6 +894,7 @@ function App() {
             sources.error instanceof Error ? sources.error.message : undefined
           }
           discoveryWarning={sources.data?.warning}
+          discoveryWarningCode={sources.data?.warningCode}
           sessionReady={sessionReady}
           onOpenService={openFleetService}
         />
@@ -846,6 +910,7 @@ function App() {
             sources.error instanceof Error ? sources.error.message : undefined
           }
           discoveryWarning={sources.data?.warning}
+          discoveryWarningCode={sources.data?.warningCode}
           sessionReady={sessionReady}
           onOpenLogs={openHealthLogs}
         />
@@ -1098,6 +1163,15 @@ function App() {
                   : activeExecution
                     ? `${entries.length.toLocaleString()} entries loaded`
                     : "Ready to query"}
+              {resultsStale && (
+                <span
+                  className="stale-results"
+                  id="stale-results"
+                  role="status"
+                >
+                  Results from previous query
+                </span>
+              )}
               {(sessionPhase === "pairing" ||
                 sessionPhase === "checking" ||
                 results.isFetching) && <span className="pulse" />}
@@ -1167,7 +1241,11 @@ function App() {
                 aria-label="Saved queries"
                 aria-expanded={savedOpen}
                 aria-controls="saved-panel"
-                onClick={() => setSavedOpen(!savedOpen)}
+                onClick={() => {
+                  const open = !savedOpen;
+                  setSavedOpen(open);
+                  if (open) setHistoryOpen(false);
+                }}
               >
                 <Bookmark size={14} />
               </button>
@@ -1177,7 +1255,11 @@ function App() {
                 aria-label="Query history"
                 aria-expanded={historyOpen}
                 aria-controls="history-panel"
-                onClick={() => setHistoryOpen(!historyOpen)}
+                onClick={() => {
+                  const open = !historyOpen;
+                  setHistoryOpen(open);
+                  if (open) setSavedOpen(false);
+                }}
               >
                 <History size={14} />
               </button>
@@ -1535,7 +1617,8 @@ function App() {
             {results.hasNextPage && entries.length > 0 && (
               <button
                 className="load-more"
-                disabled={results.isFetchingNextPage}
+                disabled={results.isFetchingNextPage || resultsStale}
+                aria-describedby={resultsStale ? "stale-results" : undefined}
                 onClick={() => results.fetchNextPage()}
               >
                 {results.isFetchingNextPage ? "Loading…" : "Load more"}

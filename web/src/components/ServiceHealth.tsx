@@ -17,6 +17,7 @@ import type {
 import { ApiError } from "../api/types";
 import { HealthChart } from "./HealthChart";
 import { MetricRefreshControl } from "./MetricRefreshControl";
+import { googleCloudAuthenticationMessage } from "./cloudErrors";
 import { formatCount, formatMetricValue } from "./metricFormat";
 import {
   loadHealthPreferences,
@@ -31,6 +32,7 @@ interface Props {
   discoveryPending: boolean;
   discoveryError?: string | undefined;
   discoveryWarning?: string | undefined;
+  discoveryWarningCode?: "authentication" | undefined;
   sessionReady: boolean;
   onOpenLogs: (service: string, start: string, end: string) => void;
 }
@@ -73,6 +75,7 @@ export function ServiceHealth({
   discoveryPending,
   discoveryError,
   discoveryWarning,
+  discoveryWarningCode,
   sessionReady,
   onOpenLogs,
 }: Props) {
@@ -86,6 +89,9 @@ export function ServiceHealth({
   const service = available.some((source) => source.id === selectedService)
     ? selectedService
     : "";
+  const authenticationRequired =
+    profile?.status === "needs-auth" ||
+    discoveryWarningCode === "authentication";
   function selectService(target: string) {
     setSelectedService(target);
     setWindowRevision((revision) => revision + 1);
@@ -125,7 +131,7 @@ export function ServiceHealth({
         signal,
       );
     },
-    enabled: sessionReady && Boolean(profile && service),
+    enabled: sessionReady && !authenticationRequired && Boolean(service),
   });
   const requests = healthSeriesPoints(health.data, "request_count");
   const errors = healthSeriesPoints(health.data, "server_error_count");
@@ -213,7 +219,15 @@ export function ServiceHealth({
         </div>
       </header>
 
-      {discoveryPending ? (
+      {authenticationRequired ? (
+        <section className="service-health-message error">
+          <AlertTriangle size={17} />
+          <div>
+            <strong>Google Cloud authentication required</strong>
+            <span>{googleCloudAuthenticationMessage}</span>
+          </div>
+        </section>
+      ) : discoveryPending ? (
         <section className="service-health-message">
           Discovering Cloud Run services…
         </section>

@@ -21,6 +21,9 @@ type OpenService = (service: string, window: HealthWindow) => void;
 function renderFleet(
   onOpenService: OpenService = vi.fn<OpenService>(),
   discoveryWarning?: string,
+  profileStatus: "ready" | "needs-auth" = "ready",
+  availableSources: Source[] = sources,
+  discoveryWarningCode?: "authentication",
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -33,11 +36,12 @@ function renderFleet(
           name: "Staging",
           projectId: "sample-project",
           provider: "gcp",
-          status: "ready",
+          status: profileStatus,
         }}
-        sources={sources}
+        sources={availableSources}
         discoveryPending={false}
         {...(discoveryWarning ? { discoveryWarning } : {})}
+        {...(discoveryWarningCode ? { discoveryWarningCode } : {})}
         sessionReady
         onOpenService={onOpenService}
       />
@@ -159,4 +163,32 @@ test("shows a bounded discovery warning without hiding available services", asyn
 
   expect(await screen.findByRole("table")).toBeVisible();
   expect(screen.getByText(/limited to 100 unique service names/)).toBeVisible();
+});
+
+test("explains when Google Cloud authentication is required", () => {
+  renderFleet(undefined, undefined, "needs-auth", []);
+
+  expect(
+    screen.getByText("Google Cloud authentication required"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/gcloud auth application-default login/),
+  ).toBeVisible();
+  expect(
+    screen.queryByText("No Cloud Run services were discovered."),
+  ).toBeNull();
+});
+
+test("explains an authentication failure reported by discovery", () => {
+  renderFleet(
+    undefined,
+    "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry.",
+    "ready",
+    [],
+    "authentication",
+  );
+
+  expect(
+    screen.getByText("Google Cloud authentication required"),
+  ).toBeVisible();
 });
