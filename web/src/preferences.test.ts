@@ -18,16 +18,29 @@ describe("preference persistence", () => {
   beforeEach(() => localStorage.clear());
 
   it("round trips non-result preferences", () => {
+    const severities = [
+      "DEFAULT",
+      "DEBUG",
+      "INFO",
+      "NOTICE",
+      "WARNING",
+      "ERROR",
+      "CRITICAL",
+      "ALERT",
+      "EMERGENCY",
+    ] as const;
     savePreferences({
       ...defaults,
       theme: "light",
       sources: ["api"],
+      severities: [...severities],
       queryDraftsEnabled: true,
       drafts: { ...defaults.drafts, leopard: "severity:error" },
     });
     expect(loadPreferences()).toMatchObject({
       theme: "light",
       sources: ["api"],
+      severities,
       drafts: { leopard: "severity:error" },
     });
     expect(localStorage.getItem("logleopard.preferences.v1")).not.toContain(
@@ -133,7 +146,7 @@ describe("preference persistence", () => {
         display: null,
         profileId: 4,
         sources: ["api", null, "api", ""],
-        severities: ["ERROR", "NOPE", {}],
+        severities: ["DEFAULT", "ERROR", "ALERT", "EMERGENCY", "NOPE", {}],
         preset: "forever",
         queryMode: "sql",
         drafts: { leopard: 7, structured: "kept", native: null },
@@ -151,7 +164,7 @@ describe("preference persistence", () => {
     expect(loadPreferences()).toEqual({
       ...defaults,
       sources: ["api"],
-      severities: ["ERROR"],
+      severities: ["DEFAULT", "ERROR", "ALERT", "EMERGENCY"],
       drafts: defaults.drafts,
       predicateDrafts: [],
     });

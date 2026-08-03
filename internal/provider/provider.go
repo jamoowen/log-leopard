@@ -30,9 +30,14 @@ type Service struct {
 	Name string `json:"name"`
 }
 
+type DiscoveryWarningCode string
+
+const DiscoveryWarningAuthentication DiscoveryWarningCode = "authentication"
+
 type Discovery struct {
-	Services []Service `json:"services"`
-	Warning  string    `json:"warning,omitempty"`
+	Services    []Service            `json:"services"`
+	Warning     string               `json:"warning,omitempty"`
+	WarningCode DiscoveryWarningCode `json:"warningCode,omitempty"`
 }
 
 type HTTPRequest struct {

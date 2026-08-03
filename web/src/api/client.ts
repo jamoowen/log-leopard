@@ -52,7 +52,12 @@ export async function requestSourceDiscovery(
     `/sources?profileId=${encodeURIComponent(profileId)}`,
   );
   const warning = response.headers.get("X-LogLeopard-Warning")?.trim();
-  return { sources: data, ...(warning ? { warning } : {}) };
+  const warningCode = response.headers.get("X-LogLeopard-Warning-Code")?.trim();
+  return {
+    sources: data,
+    ...(warning ? { warning } : {}),
+    ...(warningCode === "authentication" ? { warningCode } : {}),
+  };
 }
 
 const httpClient: ApiClient = {

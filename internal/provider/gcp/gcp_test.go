@@ -112,6 +112,21 @@ func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
 	}
 }
 
+func TestDiscoverExplainsAuthenticationFailure(t *testing.T) {
+	p := &Provider{discoverServices: func(context.Context, string) ([]provider.Service, error) {
+		return nil, provider.ErrAuthentication
+	}}
+
+	got := p.Discover(context.Background(), "synthetic-project")
+	want := "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+	if got.Warning != want {
+		t.Fatalf("warning = %q, want %q", got.Warning, want)
+	}
+	if got.WarningCode != provider.DiscoveryWarningAuthentication {
+		t.Fatalf("warning code = %q, want %q", got.WarningCode, provider.DiscoveryWarningAuthentication)
+	}
+}
+
 func TestNormalizeServiceNamesDeduplicatesRegionsAndSorts(t *testing.T) {
 	got := normalizeServiceNames([]string{
 		"projects/synthetic/locations/us-central1/services/worker",
