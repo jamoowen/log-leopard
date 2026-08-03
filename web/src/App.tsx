@@ -360,6 +360,19 @@ function App() {
     overscan: 12,
   });
 
+  function navigateLogEntry(index: number, offset: -1 | 1) {
+    const nextIndex = index + offset;
+    const entry = entries[nextIndex];
+    if (!entry) return;
+    selectEntry(entry, "overview");
+    rowVirtualizer.scrollToIndex(nextIndex);
+    requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector<HTMLButtonElement>(`button[data-index="${nextIndex}"]`)
+        ?.focus();
+    });
+  }
+
   function execute(poll = false) {
     if (
       appView !== "logs" ||
@@ -509,6 +522,11 @@ function App() {
         : [...prefs.severities, value],
     });
   }
+  function selectEntry(entry: LogEntry, tab?: string) {
+    setSelected(entry);
+    if (tab) setInspectorTab(tab);
+    setContextSelected(null);
+  }
   function togglePin(path: string) {
     const next = pins.includes(path)
       ? pins.filter((item) => item !== path)
@@ -581,9 +599,19 @@ function App() {
     setCustomOpen(false);
     setSavedOpen(false);
   }
-  const currentIndex = selected
-    ? entries.findIndex((entry) => entry.id === selected.id)
+  const navigationEntries = contextSelected
+    ? (context.data?.entries ?? [])
+    : entries;
+  const navigationEntry = contextSelected ?? selected;
+  const currentIndex = navigationEntry
+    ? navigationEntries.findIndex((entry) => entry.id === navigationEntry.id)
     : -1;
+  function navigateInspector(offset: -1 | 1) {
+    const entry = navigationEntries[currentIndex + offset];
+    if (!entry) return;
+    if (contextSelected) setContextSelected(entry);
+    else selectEntry(entry);
+  }
   const pollStatus = !prefs.polling
     ? "Polling off"
     : selected
@@ -1452,10 +1480,18 @@ function App() {
                       style={{
                         transform: `translateY(${virtualRow.start}px)`,
                       }}
-                      onClick={() => {
-                        setSelected(entry);
-                        setInspectorTab("overview");
-                        setContextSelected(null);
+                      onClick={() => selectEntry(entry, "overview")}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== "ArrowUp" &&
+                          event.key !== "ArrowDown"
+                        )
+                          return;
+                        event.preventDefault();
+                        navigateLogEntry(
+                          virtualRow.index,
+                          event.key === "ArrowUp" ? -1 : 1,
+                        );
                       }}
                     >
                       <span className="row-time">
@@ -1520,18 +1556,16 @@ function App() {
               <button
                 className="icon-button"
                 disabled={currentIndex <= 0}
-                onClick={() =>
-                  setSelected(entries[currentIndex - 1] ?? selected)
-                }
+                aria-label="Previous entry"
+                onClick={() => navigateInspector(-1)}
               >
                 ↑
               </button>
               <button
                 className="icon-button"
-                disabled={currentIndex >= entries.length - 1}
-                onClick={() =>
-                  setSelected(entries[currentIndex + 1] ?? selected)
-                }
+                disabled={currentIndex >= navigationEntries.length - 1}
+                aria-label="Next entry"
+                onClick={() => navigateInspector(1)}
               >
                 ↓
               </button>
@@ -1690,11 +1724,23 @@ function ContextView({
     <div className="context-view">
       <p>Project-wide ±15m · active source and query filters are not applied</p>
       <div className="context-list">
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <button
             className={active?.id === entry.id ? "active" : ""}
             key={entry.id}
             onClick={() => onSelect(entry)}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+              event.preventDefault();
+              const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
+              const next = entries[nextIndex];
+              if (!next) return;
+              onSelect(next);
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>("button")
+                .item(nextIndex)
+                .focus();
+            }}
           >
             <time>{formatTime(entry.timestamp, timezone)}</time>
             <span data-severity={entry.severity}>{entry.severity}</span>

@@ -246,6 +246,33 @@ test("changing connection clears profile-bound results and inspector state", asy
   await expect(page.locator(".context-list button").first()).toBeVisible();
 });
 
+test("arrow keys navigate log results and context entries", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await openLogs(page);
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.locator(".log-row").first()).toBeVisible();
+  await page.locator(".log-row").first().click();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".inspector-head strong")).toHaveText("entry-1");
+  await expect(page.locator(".log-row").nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".inspector-head strong")).toHaveText("entry-0");
+  await expect(page.locator(".log-row").first()).toBeFocused();
+
+  await page.getByRole("tab", { name: "Context" }).click();
+  await page.locator(".context-list button").first().click();
+  await expect(page.locator(".context-detail strong")).toHaveText("entry-11");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".context-detail strong")).toHaveText("entry-10");
+  await expect(page.locator(".context-list button").nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".context-detail strong")).toHaveText("entry-11");
+  await expect(page.locator(".context-list button").first()).toBeFocused();
+});
+
 test("hostile log text remains inert outside JSON views", async ({
   page,
 }, testInfo) => {
