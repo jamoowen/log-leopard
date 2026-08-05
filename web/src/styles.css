@@ -233,6 +233,14 @@ kbd {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
+.auth-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-workspace .result-state {
+  flex: 1;
+}
 .query-panel {
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--border);
@@ -998,7 +1006,7 @@ kbd {
   margin: 5px 20px 12px;
   font-size: 11px;
 }
-.result-state button,
+.result-state button:not(.primary-button),
 .load-more {
   border: 1px solid var(--border);
   background: var(--surface-2);

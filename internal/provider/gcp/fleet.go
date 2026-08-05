@@ -37,10 +37,15 @@ func validateFleetOverviewRequest(req provider.FleetOverviewRequest) error {
 	return nil
 }
 
-func queryFleetOverview(ctx context.Context, req provider.FleetOverviewRequest) (provider.FleetOverviewResult, error) {
+func (p *Provider) queryFleetOverview(ctx context.Context, req provider.FleetOverviewRequest) (provider.FleetOverviewResult, error) {
+	return queryFleetOverviewWithOptions(ctx, req, p.clientOptions(ctx))
+}
+
+func queryFleetOverviewWithOptions(ctx context.Context, req provider.FleetOverviewRequest, options []option.ClientOption) (provider.FleetOverviewResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	client, err := monitoring.NewMetricClient(ctx, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
+	options = append(options, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
+	client, err := monitoring.NewMetricClient(ctx, options...)
 	if err != nil {
 		return provider.FleetOverviewResult{}, fmt.Errorf("create monitoring client: %w", classifyError(err))
 	}

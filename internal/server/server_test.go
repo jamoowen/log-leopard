@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,9 +33,31 @@ func newTestServer(t *testing.T) (*Server, string) {
 	return newTestServerWithProvider(t, fake.New())
 }
 
+func newTestServerWithBrowserURL(t *testing.T, browserURL string) (*Server, string) {
+	t.Helper()
+	sessions, pairing := auth.NewManager(time.Minute, time.Hour)
+	cursors := cursor.New(time.Minute)
+	s, err := New(Config{
+		Host: "127.0.0.1:8787", Origin: testOrigin, BrowserURL: browserURL,
+		Profiles: profile.NewStore(filepath.Join(t.TempDir(), "connections.json")),
+		Provider: fake.New(), HealthProvider: fake.New(), Sessions: sessions, Cursors: cursors,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, pairing
+}
+
 type testProvider interface {
 	LogProvider
 	HealthProvider
+}
+
+type failingGoogleCallbackProvider struct{ *fake.Provider }
+
+func (failingGoogleCallbackProvider) CompleteGoogleAuth(context.Context, providerapi.GoogleAuthCallback) error {
+	return errors.New("callback failed")
 }
 
 func newTestServerWithProvider(t *testing.T, p testProvider) (*Server, string) {
@@ -132,6 +155,68 @@ func TestSecurityPairingAndAuthenticatedProfiles(t *testing.T) {
 	}
 }
 
+func TestGoogleAuthStartRequiresSessionAndOrigin(t *testing.T) {
+	s, pairing := newTestServer(t)
+	if w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, nil, testOrigin); w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status %d", w.Code)
+	}
+	cookie := pair(t, s, pairing)
+	if w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, cookie, "http://evil.invalid"); w.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin status %d", w.Code)
+	}
+	w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, cookie, testOrigin)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"state":"available"`) {
+		t.Fatalf("login status %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGoogleAuthCallbackDoesNotRequirePairingSession(t *testing.T) {
+	s, _ := newTestServer(t)
+	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
+	location, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusFound || location.Scheme+"://"+location.Host+location.Path != testOrigin+"/" || location.Query().Get("auth") != "success" || location.Query().Get("completion") != "" {
+		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
+	}
+	if cookie := w.Result().Cookies(); len(cookie) != 0 {
+		t.Fatalf("callback cookies = %#v", cookie)
+	}
+}
+
+func TestGoogleAuthCallbackRedirectsToBrowserURL(t *testing.T) {
+	s, _ := newTestServerWithBrowserURL(t, "http://127.0.0.1:5173/ui")
+	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "http://127.0.0.1:5173/ui/?auth=success" {
+		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func TestGoogleAuthCallbackRedirectsToFailureWithoutCookies(t *testing.T) {
+	s, _ := newTestServerWithProvider(t, failingGoogleCallbackProvider{Provider: fake.New()})
+	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != testOrigin+"/?auth=failed" {
+		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
+	}
+	if cookie := w.Result().Cookies(); len(cookie) != 0 {
+		t.Fatalf("callback cookies = %#v", cookie)
+	}
+}
+
+func TestNewRejectsInvalidBrowserURL(t *testing.T) {
+	sessions, _ := auth.NewManager(time.Minute, time.Hour)
+	cursors := cursor.New(time.Minute)
+	_, err := New(Config{
+		Host: "127.0.0.1:8787", Origin: testOrigin, BrowserURL: "http://localhost:5173",
+		Profiles: profile.NewStore(filepath.Join(t.TempDir(), "connections.json")),
+		Provider: fake.New(), HealthProvider: fake.New(), Sessions: sessions, Cursors: cursors,
+	})
+	if err == nil || !strings.Contains(err.Error(), "browser URL") {
+		t.Fatalf("New() error = %v, want browser URL validation error", err)
+	}
+}
+
 func TestProfileWritesExposeOnlyValidationErrors(t *testing.T) {
 	s, pairing := newTestServer(t)
 	cookie := pair(t, s, pairing)
@@ -167,6 +252,7 @@ func TestHostOriginAndOpenAPI(t *testing.T) {
 		t.Fatalf("OpenAPI status %d: %s", w.Code, w.Body.String())
 	}
 	for _, want := range []string{
+		`"/api/v1/auth/google/start"`, `"summary":"Start Google sign-in"`,
 		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`, `"summary":"Get Cloud Run fleet overview"`,
 		`"description":"Exact payload path selected for message."`, `"description":"Exact structured-field comparison operator."`,
 		`"X-LogLeopard-Warning"`, `"X-LogLeopard-Warning-Code"`,
@@ -437,7 +523,7 @@ func TestQueryReturnsActionableProviderErrors(t *testing.T) {
 		statusCode int
 		detail     string
 	}{
-		{name: "authentication", err: providerapi.ErrAuthentication, statusCode: http.StatusFailedDependency, detail: "gcloud auth application-default login"},
+		{name: "authentication", err: providerapi.ErrAuthentication, statusCode: http.StatusFailedDependency, detail: "Sign in with Google"},
 		{name: "permission", err: providerapi.ErrPermissionDenied, statusCode: http.StatusForbidden, detail: "roles/logging.viewer"},
 		{name: "rate limit", err: providerapi.ErrRateLimited, statusCode: http.StatusTooManyRequests, detail: "rate-limited"},
 		{name: "unavailable", err: providerapi.ErrUnavailable, statusCode: http.StatusServiceUnavailable, detail: "temporarily unavailable"},

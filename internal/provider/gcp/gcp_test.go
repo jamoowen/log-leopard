@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -20,6 +21,16 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestOAuthTokenPathUsesProfileConfigDirectory(t *testing.T) {
+	path, err := oauthTokenPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := filepath.Base(filepath.Dir(path)), "LogLeopard"; got != want {
+		t.Fatalf("token directory = %q, want %q", got, want)
+	}
+}
 
 func TestClassifyError(t *testing.T) {
 	tests := []struct {
@@ -95,7 +106,7 @@ func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Provider{discoverServices: func(context.Context, string) ([]provider.Service, error) {
+			p := &Provider{discoverFn: func(context.Context, string) ([]provider.Service, error) {
 				return tt.services, tt.err
 			}}
 			got := p.Discover(context.Background(), "synthetic-project")
@@ -113,12 +124,12 @@ func TestDiscoverDistinguishesEmptySuccessFromFailure(t *testing.T) {
 }
 
 func TestDiscoverExplainsAuthenticationFailure(t *testing.T) {
-	p := &Provider{discoverServices: func(context.Context, string) ([]provider.Service, error) {
+	p := &Provider{discoverFn: func(context.Context, string) ([]provider.Service, error) {
 		return nil, provider.ErrAuthentication
 	}}
 
 	got := p.Discover(context.Background(), "synthetic-project")
-	want := "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+	want := "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
 	if got.Warning != want {
 		t.Fatalf("warning = %q, want %q", got.Warning, want)
 	}

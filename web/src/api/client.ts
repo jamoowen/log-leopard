@@ -67,6 +67,7 @@ const httpClient: ApiClient = {
       body: JSON.stringify({ token }),
     }),
   authStatus: () => request("/auth/status"),
+  startGoogleAuth: () => request("/auth/google/start", { method: "POST" }),
   profiles: () => request("/profiles"),
   saveProfile: (input: ProfileInput, id?: string) =>
     request(`/profiles${id ? `/${encodeURIComponent(id)}` : ""}`, {
