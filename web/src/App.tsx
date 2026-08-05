@@ -21,6 +21,7 @@ import {
   Database,
   History,
   Layers3,
+  LogIn,
   Moon,
   PanelRightClose,
   Play,
@@ -73,6 +74,7 @@ import { JsonText } from "./components/JsonText";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ServiceHealth } from "./components/ServiceHealth";
 import { StructuredBuilder } from "./components/StructuredBuilder";
+import { googleCloudAuthenticationMessage } from "./components/cloudErrors";
 
 const severities: Severity[] = [
   "DEFAULT",
@@ -182,11 +184,16 @@ function App() {
     "checking" | "pairing" | "ready" | "unpaired"
   >(() => (pairingToken.current ? "pairing" : "checking"));
   const [sessionRevision, setSessionRevision] = useState(0);
+  const [oauthFinishError, setOAuthFinishError] = useState<string>();
   const paletteTriggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef(false);
   const runRef = useRef(0);
   const previousProfileRef = useRef<string | undefined>(undefined);
+  const previousCredentialAvailabilityRef = useRef<boolean | undefined>(
+    undefined,
+  );
+  const handledOAuthReturnRef = useRef(false);
   const executeRef = useRef<(poll?: boolean) => void>(() => undefined);
   const queryClient = useQueryClient();
 
@@ -232,7 +239,9 @@ function App() {
   const authStatus = useQuery({
     queryKey: ["auth-status"],
     queryFn: () => api.authStatus(),
-    enabled: sessionState === "checking",
+    enabled: sessionState === "checking" || sessionState === "ready",
+    refetchInterval: (query) =>
+      query.state.data?.state === "pending" ? 1_000 : false,
   });
   const sessionPhase =
     sessionState === "checking" && authStatus.isSuccess
@@ -283,6 +292,56 @@ function App() {
       update({ profileId: profile.id });
     },
   });
+  const startGoogleAuth = useMutation({
+    mutationFn: () => api.startGoogleAuth(),
+    onSuccess: (start) => {
+      if (start.authorizationUrl)
+        window.location.assign(start.authorizationUrl);
+    },
+  });
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const auth = params.get("auth");
+    if (
+      (auth !== "success" && auth !== "failed") ||
+      handledOAuthReturnRef.current
+    )
+      return;
+    handledOAuthReturnRef.current = true;
+    const finish = async () => {
+      if (auth === "failed") {
+        setOAuthFinishError(
+          "Google sign-in was not completed. Start sign-in again.",
+        );
+      }
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.hash,
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["auth-status"] }),
+        queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["sources"] }),
+        queryClient.invalidateQueries({ queryKey: ["fleet-overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["service-health"] }),
+        queryClient.invalidateQueries({ queryKey: ["query"] }),
+      ]);
+    };
+    void finish();
+  }, [queryClient]);
+  useEffect(() => {
+    const available = authStatus.data?.available;
+    if (previousCredentialAvailabilityRef.current === false && available) {
+      void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+      void queryClient.invalidateQueries({ queryKey: ["sources"] });
+      void queryClient.invalidateQueries({ queryKey: ["service-health"] });
+      void queryClient.invalidateQueries({ queryKey: ["fleet-overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["query"] });
+    }
+    if (available !== undefined)
+      previousCredentialAvailabilityRef.current = available;
+  }, [authStatus.data?.available, queryClient]);
   const activeExecution =
     executed?.request.profileId === activeProfile?.id ? executed : null;
   const results = useInfiniteQuery({
@@ -329,9 +388,20 @@ function App() {
   );
   const queryUnauthorized =
     results.error instanceof ApiError && results.error.status === 401;
+  const queryAuthenticationMessage =
+    results.error instanceof ApiError &&
+    results.error.status === 424 &&
+    results.error.message.includes("Google Cloud authentication")
+      ? results.error.message
+      : undefined;
   const sessionUnavailable =
     sessionPhase === "unpaired" || profileUnauthorized || queryUnauthorized;
   const sessionReady = sessionPhase === "ready" && !sessionUnavailable;
+  const needsAuthentication =
+    sessionReady &&
+    (!authStatus.data?.available ||
+      activeProfile?.status === "needs-auth" ||
+      Boolean(queryAuthenticationMessage));
   const discoveredSources = sources.data?.sources ?? [];
   const selectableSources = discoveredSources.filter(
     (source) => source.id.trim() !== "",
@@ -884,7 +954,36 @@ function App() {
         </button>
       </nav>
 
-      {appView === "fleet" && (
+      {needsAuthentication && (
+        <main className="workspace auth-workspace">
+          <State
+            icon={<LogIn />}
+            title="Sign in with Google"
+            detail={
+              queryAuthenticationMessage
+                ? queryAuthenticationMessage
+                : (oauthFinishError ??
+                  authStatus.data?.message ??
+                  googleCloudAuthenticationMessage)
+            }
+            action={
+              <button
+                className="primary-button"
+                disabled={startGoogleAuth.isPending}
+                onClick={() => startGoogleAuth.mutate()}
+              >
+                <LogIn />
+                {startGoogleAuth.isPending
+                  ? "Starting sign-in…"
+                  : "Sign in with Google"}
+              </button>
+            }
+            tone="error"
+          />
+        </main>
+      )}
+
+      {!needsAuthentication && appView === "fleet" && (
         <FleetOverview
           key={activeProfile?.id ?? "no-profile"}
           profile={activeProfile}
@@ -900,7 +999,7 @@ function App() {
         />
       )}
 
-      {appView === "health" && (
+      {!needsAuthentication && appView === "health" && (
         <ServiceHealth
           key={`${activeProfile?.id ?? "no-profile"}:${healthRevision}`}
           profile={activeProfile}
@@ -915,7 +1014,10 @@ function App() {
           onOpenLogs={openHealthLogs}
         />
       )}
-      <main className="workspace" hidden={appView !== "logs"}>
+      <main
+        className="workspace"
+        hidden={needsAuthentication || appView !== "logs"}
+      >
         <section className="query-panel">
           <div className="control-strip">
             <div className="source-control">
@@ -1491,7 +1593,7 @@ function App() {
                 {...(sessionUnavailable ? { tone: "error" } : {})}
               />
             )}
-            {sessionReady && !activeExecution && (
+            {sessionReady && !needsAuthentication && !activeExecution && (
               <State
                 icon={<Search />}
                 title="Define a query"

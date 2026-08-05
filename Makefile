@@ -1,5 +1,10 @@
 .PHONY: build web-build build-production dev dev-fake web-dev fmt fmt-check lint lint-go vet test web-check check openapi api api-check run run-fake verify-release
 
+-include .env
+ifneq (,$(wildcard .env))
+export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
+endif
+
 build:
 	go build ./cmd/log-leopard
 

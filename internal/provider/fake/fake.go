@@ -21,6 +21,15 @@ func New() *Provider { return &Provider{} }
 
 func (*Provider) ADCStatus(context.Context) (bool, string) { return true, "Fake provider enabled" }
 
+func (*Provider) AuthStatus(context.Context) provider.AuthStatus {
+	return provider.AuthStatus{State: provider.AuthAvailable, Message: "Fake provider credentials are available."}
+}
+
+func (*Provider) StartGoogleAuth(context.Context, string) provider.AuthStart {
+	return provider.AuthStart{AuthStatus: provider.AuthStatus{State: provider.AuthAvailable, Message: "Fake provider credentials are available."}, AuthorizationURL: "https://example.invalid/google-auth"}
+}
+func (*Provider) CompleteGoogleAuth(context.Context, provider.GoogleAuthCallback) error { return nil }
+
 func (*Provider) Discover(context.Context, string) provider.Discovery {
 	return provider.Discovery{Services: []provider.Service{
 		{ID: "", Name: "All logs"},

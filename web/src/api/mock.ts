@@ -27,7 +27,19 @@ export const mockClient: ApiClient = {
   },
   async authStatus() {
     await pause(30);
-    return { available: true, message: "Synthetic credentials are available." };
+    return {
+      available: true,
+      state: "available",
+      message: "Synthetic credentials are available.",
+    };
+  },
+  async startGoogleAuth() {
+    await pause(30);
+    return {
+      authorizationUrl: "https://example.invalid/google-auth",
+      state: "available",
+      message: "Synthetic credentials are available.",
+    };
   },
   async profiles() {
     await pause(50);

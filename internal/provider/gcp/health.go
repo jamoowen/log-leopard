@@ -35,10 +35,15 @@ func validateHealthRequest(req provider.ServiceHealthRequest) error {
 	return nil
 }
 
-func queryServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) (provider.ServiceHealthResult, error) {
+func (p *Provider) queryServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) (provider.ServiceHealthResult, error) {
+	return queryServiceHealthWithOptions(ctx, req, p.clientOptions(ctx))
+}
+
+func queryServiceHealthWithOptions(ctx context.Context, req provider.ServiceHealthRequest, options []option.ClientOption) (provider.ServiceHealthResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	client, err := monitoring.NewMetricClient(ctx, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
+	options = append(options, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
+	client, err := monitoring.NewMetricClient(ctx, options...)
 	if err != nil {
 		return provider.ServiceHealthResult{}, fmt.Errorf("create monitoring client: %w", classifyError(err))
 	}

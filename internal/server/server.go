@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ import (
 type Config struct {
 	Host           string
 	Origin         string
+	BrowserURL     string
 	Profiles       *profile.Store
 	Provider       LogProvider
 	HealthProvider HealthProvider
@@ -35,6 +38,9 @@ type Config struct {
 
 type LogProvider interface {
 	ADCStatus(context.Context) (bool, string)
+	AuthStatus(context.Context) provider.AuthStatus
+	StartGoogleAuth(context.Context, string) provider.AuthStart
+	CompleteGoogleAuth(context.Context, provider.GoogleAuthCallback) error
 	Discover(context.Context, string) provider.Discovery
 	Query(context.Context, provider.QueryRequest) (provider.QueryResult, error)
 }
@@ -57,6 +63,11 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Origin != "http://"+cfg.Host && cfg.Origin != "https://"+cfg.Host {
 		return nil, errors.New("origin must exactly match the listening host")
 	}
+	browserURL, err := normalizeBrowserURL(cfg.BrowserURL, cfg.Origin)
+	if err != nil {
+		return nil, err
+	}
+	cfg.BrowserURL = browserURL
 	if cfg.Profiles == nil || cfg.Provider == nil || cfg.HealthProvider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
 		return nil, errors.New("server dependencies are required")
 	}
@@ -75,9 +86,26 @@ func New(cfg Config) (*Server, error) {
 	api := humago.New(mux, humaConfig)
 	s := &Server{API: api, cfg: cfg}
 	s.register()
+	mux.HandleFunc("GET /api/v1/auth/google/callback", s.googleCallback)
 	mux.Handle("/", spaHandler(webassets.Assets()))
 	s.Handler = s.security(s.authenticate(mux))
 	return s, nil
+}
+
+func normalizeBrowserURL(browserURL, fallback string) (string, error) {
+	if browserURL == "" {
+		browserURL = fallback
+	}
+	parsed, err := url.Parse(browserURL)
+	if err != nil {
+		return "", fmt.Errorf("parse browser URL: %w", err)
+	}
+	ip := net.ParseIP(parsed.Hostname())
+	if parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || ip == nil || !ip.IsLoopback() {
+		return "", errors.New("browser URL must be an HTTP URL on a numeric loopback address without credentials, query, or fragment")
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/"
+	return parsed.String(), nil
 }
 
 func validateHost(hostport string) error {
@@ -149,8 +177,16 @@ type servicesOutput struct {
 }
 type authStatusOutput struct {
 	Body struct {
-		Available bool   `json:"available" doc:"Whether Application Default Credentials are available."`
-		Message   string `json:"message" doc:"Sanitized credential status message."`
+		Available bool               `json:"available" doc:"Whether backend Google credentials or Application Default Credentials are available."`
+		State     provider.AuthState `json:"state" enum:"unconfigured,available,needs-auth,pending,failed" doc:"Sanitized local Google credential state."`
+		Message   string             `json:"message" doc:"Sanitized credential status message."`
+	}
+}
+type authStartOutput struct {
+	Body struct {
+		AuthorizationURL string             `json:"authorizationUrl,omitempty" doc:"Google authorization URL. Contains no LogLeopard credentials."`
+		State            provider.AuthState `json:"state" enum:"unconfigured,available,needs-auth,pending,failed" doc:"Sanitized local Google credential state."`
+		Message          string             `json:"message" doc:"Sanitized credential status message."`
 	}
 }
 type queryInput struct {
@@ -236,6 +272,7 @@ func (s *Server) register() {
 	huma.Register(s.API, operation("pair", http.MethodPost, "/api/v1/session/pair", "Pair browser session", "Exchange the single-use startup token for a local HttpOnly session cookie.", nil), s.pair)
 	huma.Register(s.API, operation("logout", http.MethodPost, "/api/v1/session/logout", "Log out", "Invalidate the current local session and expire its cookie.", session), s.logout)
 	huma.Register(s.API, operation("auth-status", http.MethodGet, "/api/v1/auth/status", "Get credential status", "Report sanitized GCP Application Default Credential availability.", session), s.authStatus)
+	huma.Register(s.API, operation("auth-google-start", http.MethodPost, "/api/v1/auth/google/start", "Start Google sign-in", "Start a backend-owned Google OAuth installed-app flow.", session), s.startGoogleAuth)
 	huma.Register(s.API, operation("list-profiles", http.MethodGet, "/api/v1/profiles", "List connection profiles", "List local GCP connection profiles without credentials.", session), s.listProfiles)
 	huma.Register(s.API, operation("create-profile", http.MethodPost, "/api/v1/profiles", "Create connection profile", "Create a local profile containing a display name and GCP project ID.", session), s.createProfile)
 	huma.Register(s.API, operation("update-profile", http.MethodPut, "/api/v1/profiles/{id}", "Update connection profile", "Replace the name and GCP project ID of a local connection profile.", session), s.updateProfile)
@@ -271,10 +308,35 @@ func (s *Server) logout(ctx context.Context, _ *emptyInput) (*cookieOutput, erro
 	return out, nil
 }
 
+func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
+	// The Google cross-site return cannot rely on the Strict pairing cookie; state and PKCE bind this callback.
+	err := s.cfg.Provider.CompleteGoogleAuth(r.Context(), provider.GoogleAuthCallback{RedirectURI: s.cfg.Origin + "/api/v1/auth/google/callback", State: r.URL.Query().Get("state"), Code: r.URL.Query().Get("code"), Error: r.URL.Query().Get("error")})
+	if err != nil {
+		http.Redirect(w, r, s.cfg.BrowserURL+"?auth=failed", http.StatusFound)
+		return
+	}
+	redirect, _ := url.Parse(s.cfg.BrowserURL)
+	query := redirect.Query()
+	query.Set("auth", "success")
+	redirect.RawQuery = query.Encode()
+	http.Redirect(w, r, redirect.String(), http.StatusFound)
+}
+
 func (s *Server) authStatus(ctx context.Context, _ *emptyInput) (*authStatusOutput, error) {
 	available, message := s.cfg.Provider.ADCStatus(ctx)
 	out := &authStatusOutput{}
-	out.Body.Available, out.Body.Message = available, message
+	status := s.cfg.Provider.AuthStatus(ctx)
+	out.Body.Available, out.Body.State, out.Body.Message = available, status.State, message
+	if !available {
+		out.Body.Message = status.Message
+	}
+	return out, nil
+}
+
+func (s *Server) startGoogleAuth(ctx context.Context, _ *emptyInput) (*authStartOutput, error) {
+	start := s.cfg.Provider.StartGoogleAuth(ctx, s.cfg.Origin+"/api/v1/auth/google/callback")
+	out := &authStartOutput{}
+	out.Body.AuthorizationURL, out.Body.State, out.Body.Message = start.AuthorizationURL, start.State, start.Message
 	return out, nil
 }
 
@@ -578,7 +640,7 @@ func (s *Server) providerFailure(operation string, err error) error {
 	case errors.Is(err, provider.ErrAuthentication):
 		category = "authentication"
 		statusCode = http.StatusFailedDependency
-		message = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+		message = "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
 	case errors.Is(err, provider.ErrPermissionDenied):
 		category = "permission_denied"
 		statusCode = http.StatusForbidden
@@ -612,7 +674,7 @@ func (s *Server) monitoringFailure(operation string, err error) error {
 	case errors.Is(err, provider.ErrAuthentication):
 		category = "authentication"
 		statusCode = http.StatusFailedDependency
-		message = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+		message = "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
 	case errors.Is(err, provider.ErrPermissionDenied):
 		category = "permission_denied"
 		statusCode = http.StatusForbidden
@@ -645,7 +707,7 @@ func requestFromContext(ctx context.Context) (*http.Request, bool) {
 
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/api/v1/session/pair" {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/api/v1/session/pair" || r.URL.Path == "/api/v1/auth/google/callback" {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestContextKey{}, r)))
 			return
 		}

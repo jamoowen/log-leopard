@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -17,35 +19,91 @@ import (
 	"github.com/jamoowen/log-leopard/internal/provider"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type Provider struct {
-	discoverServices func(context.Context, string) ([]provider.Service, error)
-	serviceHealth    func(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
-	fleetOverview    func(context.Context, provider.FleetOverviewRequest) (provider.FleetOverviewResult, error)
+	discoverFn    func(context.Context, string) ([]provider.Service, error)
+	serviceHealth func(context.Context, provider.ServiceHealthRequest) (provider.ServiceHealthResult, error)
+	fleetOverview func(context.Context, provider.FleetOverviewRequest) (provider.FleetOverviewResult, error)
+	oauth         *oauthManager
+	adcAvailable  func(context.Context) bool
 }
 
-func New() *Provider {
-	return &Provider{discoverServices: discoverServices, serviceHealth: queryServiceHealth, fleetOverview: queryFleetOverview}
+type Config struct {
+	ClientID, ClientSecret string
+	TokenStore             tokenStore
 }
 
-func (*Provider) ADCStatus(ctx context.Context) (bool, string) {
-	_, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform.read-only")
-	if err != nil {
-		return false, "Application Default Credentials are unavailable. Run gcloud auth application-default login."
+func New(configs ...Config) *Provider {
+	config := Config{}
+	if len(configs) > 0 {
+		config = configs[0]
 	}
-	return true, "Application Default Credentials are available."
+	store := config.TokenStore
+	if store == nil {
+		path, err := oauthTokenPath()
+		if err == nil {
+			store = fileTokenStore{path: path}
+		}
+	}
+	oauth := newOAuthManager(config.ClientID, config.ClientSecret, store)
+	p := &Provider{oauth: oauth, adcAvailable: func(ctx context.Context) bool {
+		creds, err := google.FindDefaultCredentials(ctx, oauthScope)
+		if err != nil {
+			return false
+		}
+		_, err = creds.TokenSource.Token()
+		return err == nil
+	}}
+	p.discoverFn = p.discoverServices
+	p.serviceHealth = p.queryServiceHealth
+	p.fleetOverview = p.queryFleetOverview
+	return p
+}
+
+func oauthTokenPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "LogLeopard", "google-oauth-token.json"), nil
+}
+
+func (p *Provider) ADCStatus(ctx context.Context) (bool, string) {
+	if _, ok := p.oauth.tokenSource(ctx); ok {
+		return true, "Google sign-in credentials are available."
+	}
+	if p.adcAvailable(ctx) {
+		return true, "Application Default Credentials are available."
+	}
+	return false, p.oauth.status(ctx).Message
+}
+
+func (p *Provider) AuthStatus(ctx context.Context) provider.AuthStatus { return p.oauth.status(ctx) }
+func (p *Provider) StartGoogleAuth(ctx context.Context, redirectURI string) provider.AuthStart {
+	return p.oauth.start(ctx, redirectURI)
+}
+func (p *Provider) CompleteGoogleAuth(ctx context.Context, request provider.GoogleAuthCallback) error {
+	return p.oauth.callback(ctx, request)
+}
+
+func (p *Provider) clientOptions(ctx context.Context) []option.ClientOption {
+	if source, ok := p.oauth.tokenSource(ctx); ok {
+		return []option.ClientOption{option.WithTokenSource(source)}
+	}
+	return nil
 }
 
 func (p *Provider) Discover(ctx context.Context, projectID string) provider.Discovery {
 	discovery := provider.Discovery{Services: []provider.Service{{ID: "", Name: "All logs"}}}
-	services, err := p.discoverServices(ctx, projectID)
+	services, err := p.discoverFn(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, provider.ErrAuthentication) {
-			discovery.Warning = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
+			discovery.Warning = "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
 			discovery.WarningCode = provider.DiscoveryWarningAuthentication
 		} else {
 			discovery.Warning = "Cloud Run discovery is unavailable; manual and all-logs queries still work."
@@ -60,8 +118,11 @@ func (p *Provider) Discover(ctx context.Context, projectID string) provider.Disc
 	return discovery
 }
 
-func discoverServices(ctx context.Context, projectID string) ([]provider.Service, error) {
-	client, err := run.NewServicesClient(ctx)
+func (p *Provider) discoverServices(ctx context.Context, projectID string) ([]provider.Service, error) {
+	return discoverServicesWithOptions(ctx, projectID, p.clientOptions(ctx))
+}
+func discoverServicesWithOptions(ctx context.Context, projectID string, options []option.ClientOption) ([]provider.Service, error) {
+	client, err := run.NewServicesClient(ctx, options...)
 	if err != nil {
 		return nil, fmt.Errorf("create Cloud Run client: %w", err)
 	}
@@ -120,8 +181,8 @@ func normalizeServiceNames(resourceNames []string) []provider.Service {
 	return services
 }
 
-func (*Provider) Query(ctx context.Context, req provider.QueryRequest) (provider.QueryResult, error) {
-	client, err := logging.NewClient(ctx)
+func (p *Provider) Query(ctx context.Context, req provider.QueryRequest) (provider.QueryResult, error) {
+	client, err := logging.NewClient(ctx, p.clientOptions(ctx)...)
 	if err != nil {
 		return provider.QueryResult{}, fmt.Errorf("create logging client: %w", err)
 	}

@@ -1,6 +1,44 @@
 {
   "components": {
     "schemas": {
+      "AuthStartOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/AuthStartOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "authorizationUrl": {
+            "description": "Google authorization URL. Contains no LogLeopard credentials.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Sanitized credential status message.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Sanitized local Google credential state.",
+            "enum": [
+              "unconfigured",
+              "available",
+              "needs-auth",
+              "pending",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "message"
+        ],
+        "type": "object"
+      },
       "AuthStatusOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -14,16 +52,28 @@
             "type": "string"
           },
           "available": {
-            "description": "Whether Application Default Credentials are available.",
+            "description": "Whether backend Google credentials or Application Default Credentials are available.",
             "type": "boolean"
           },
           "message": {
             "description": "Sanitized credential status message.",
             "type": "string"
+          },
+          "state": {
+            "description": "Sanitized local Google credential state.",
+            "enum": [
+              "unconfigured",
+              "available",
+              "needs-auth",
+              "pending",
+              "failed"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "available",
+          "state",
           "message"
         ],
         "type": "object"
@@ -942,6 +992,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/google/start": {
+      "post": {
+        "description": "Start a backend-owned Google OAuth installed-app flow.",
+        "operationId": "auth-google-start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStartOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Start Google sign-in",
+        "tags": [
+          "LogLeopard"
+        ]
+      }
+    },
     "/api/v1/auth/status": {
       "get": {
         "description": "Report sanitized GCP Application Default Credential availability.",
