@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,31 +32,9 @@ func newTestServer(t *testing.T) (*Server, string) {
 	return newTestServerWithProvider(t, fake.New())
 }
 
-func newTestServerWithBrowserURL(t *testing.T, browserURL string) (*Server, string) {
-	t.Helper()
-	sessions, pairing := auth.NewManager(time.Minute, time.Hour)
-	cursors := cursor.New(time.Minute)
-	s, err := New(Config{
-		Host: "127.0.0.1:8787", Origin: testOrigin, BrowserURL: browserURL,
-		Profiles: profile.NewStore(filepath.Join(t.TempDir(), "connections.json")),
-		Provider: fake.New(), HealthProvider: fake.New(), Sessions: sessions, Cursors: cursors,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s, pairing
-}
-
 type testProvider interface {
 	LogProvider
 	HealthProvider
-}
-
-type failingGoogleCallbackProvider struct{ *fake.Provider }
-
-func (failingGoogleCallbackProvider) CompleteGoogleAuth(context.Context, providerapi.GoogleAuthCallback) error {
-	return errors.New("callback failed")
 }
 
 func newTestServerWithProvider(t *testing.T, p testProvider) (*Server, string) {
@@ -155,65 +132,18 @@ func TestSecurityPairingAndAuthenticatedProfiles(t *testing.T) {
 	}
 }
 
-func TestGoogleAuthStartRequiresSessionAndOrigin(t *testing.T) {
+func TestLogoutInvalidatesLocalPairingSession(t *testing.T) {
 	s, pairing := newTestServer(t)
-	if w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, nil, testOrigin); w.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status %d", w.Code)
-	}
 	cookie := pair(t, s, pairing)
-	if w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, cookie, "http://evil.invalid"); w.Code != http.StatusForbidden {
-		t.Fatalf("cross-origin status %d", w.Code)
+	w := request(t, s, http.MethodPost, "/api/v1/session/logout", nil, cookie, testOrigin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("logout status %d: %s", w.Code, w.Body.String())
 	}
-	w := request(t, s, http.MethodPost, "/api/v1/auth/google/start", nil, cookie, testOrigin)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"state":"available"`) {
-		t.Fatalf("login status %d: %s", w.Code, w.Body.String())
+	if cookie := w.Result().Cookies(); len(cookie) != 1 || cookie[0].MaxAge != -1 {
+		t.Fatalf("logout cookie = %#v", cookie)
 	}
-}
-
-func TestGoogleAuthCallbackDoesNotRequirePairingSession(t *testing.T) {
-	s, _ := newTestServer(t)
-	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
-	location, err := url.Parse(w.Header().Get("Location"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.Code != http.StatusFound || location.Scheme+"://"+location.Host+location.Path != testOrigin+"/" || location.Query().Get("auth") != "success" || location.Query().Get("completion") != "" {
-		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
-	}
-	if cookie := w.Result().Cookies(); len(cookie) != 0 {
-		t.Fatalf("callback cookies = %#v", cookie)
-	}
-}
-
-func TestGoogleAuthCallbackRedirectsToBrowserURL(t *testing.T) {
-	s, _ := newTestServerWithBrowserURL(t, "http://127.0.0.1:5173/ui")
-	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
-	if w.Code != http.StatusFound || w.Header().Get("Location") != "http://127.0.0.1:5173/ui/?auth=success" {
-		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
-	}
-}
-
-func TestGoogleAuthCallbackRedirectsToFailureWithoutCookies(t *testing.T) {
-	s, _ := newTestServerWithProvider(t, failingGoogleCallbackProvider{Provider: fake.New()})
-	w := request(t, s, http.MethodGet, "/api/v1/auth/google/callback?state=test&code=test", nil, nil, "")
-	if w.Code != http.StatusFound || w.Header().Get("Location") != testOrigin+"/?auth=failed" {
-		t.Fatalf("callback status %d location %q", w.Code, w.Header().Get("Location"))
-	}
-	if cookie := w.Result().Cookies(); len(cookie) != 0 {
-		t.Fatalf("callback cookies = %#v", cookie)
-	}
-}
-
-func TestNewRejectsInvalidBrowserURL(t *testing.T) {
-	sessions, _ := auth.NewManager(time.Minute, time.Hour)
-	cursors := cursor.New(time.Minute)
-	_, err := New(Config{
-		Host: "127.0.0.1:8787", Origin: testOrigin, BrowserURL: "http://localhost:5173",
-		Profiles: profile.NewStore(filepath.Join(t.TempDir(), "connections.json")),
-		Provider: fake.New(), HealthProvider: fake.New(), Sessions: sessions, Cursors: cursors,
-	})
-	if err == nil || !strings.Contains(err.Error(), "browser URL") {
-		t.Fatalf("New() error = %v, want browser URL validation error", err)
+	if w := request(t, s, http.MethodGet, "/api/v1/profiles", nil, cookie, testOrigin); w.Code != http.StatusUnauthorized {
+		t.Fatalf("logged-out session status %d", w.Code)
 	}
 }
 
@@ -252,7 +182,6 @@ func TestHostOriginAndOpenAPI(t *testing.T) {
 		t.Fatalf("OpenAPI status %d: %s", w.Code, w.Body.String())
 	}
 	for _, want := range []string{
-		`"/api/v1/auth/google/start"`, `"summary":"Start Google sign-in"`,
 		`"summary":"Query Cloud Run logs"`, `"summary":"Get request context"`, `"summary":"Get Cloud Run service health"`, `"summary":"Get Cloud Run fleet overview"`,
 		`"description":"Exact payload path selected for message."`, `"description":"Exact structured-field comparison operator."`,
 		`"X-LogLeopard-Warning"`, `"X-LogLeopard-Warning-Code"`,
@@ -270,6 +199,27 @@ func (warningProvider) Discover(context.Context, string) providerapi.Discovery {
 		Services:    []providerapi.Service{{ID: "", Name: "All logs"}},
 		Warning:     "Google Cloud authentication is unavailable or expired.",
 		WarningCode: providerapi.DiscoveryWarningAuthentication,
+	}
+}
+
+type deadlineDiscoveryProvider struct {
+	*recordingProvider
+	deadline time.Time
+}
+
+func (p *deadlineDiscoveryProvider) Discover(ctx context.Context, _ string) providerapi.Discovery {
+	p.deadline, _ = ctx.Deadline()
+	return providerapi.Discovery{Services: []providerapi.Service{{ID: "", Name: "All logs"}}}
+}
+
+func TestDiscoveryHasDeadlineBelowHTTPWriteTimeout(t *testing.T) {
+	p := &deadlineDiscoveryProvider{recordingProvider: &recordingProvider{Provider: fake.New()}}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	response := request(t, s, http.MethodGet, "/api/v1/sources?profileId="+created.ID, nil, cookie, testOrigin)
+	if response.Code != http.StatusOK || p.deadline.IsZero() || time.Until(p.deadline) > 30*time.Second {
+		t.Fatalf("discovery deadline = %v, response = %d", p.deadline, response.Code)
 	}
 }
 
@@ -308,7 +258,7 @@ func TestQueryCursorIsBoundToRequest(t *testing.T) {
 	}
 	now := time.Date(2026, 1, 15, 13, 0, 0, 0, time.UTC)
 	body := map[string]any{
-		"profileId": created.ID, "mode": "leopard", "query": "timeout", "start": now.Add(-time.Hour),
+		"profileId": created.ID, "mode": "leopard", "query": "", "start": now.Add(-2 * time.Hour),
 		"end": now, "limit": 2,
 	}
 	w = request(t, s, http.MethodPost, "/api/v1/query", body, cookie, testOrigin)
@@ -336,7 +286,9 @@ func TestQueryCursorIsBoundToRequest(t *testing.T) {
 type recordingProvider struct {
 	*fake.Provider
 	requests       []providerapi.QueryRequest
+	queryDeadlines []time.Time
 	result         providerapi.QueryResult
+	results        []providerapi.QueryResult
 	err            error
 	healthRequests []providerapi.ServiceHealthRequest
 	healthResult   providerapi.ServiceHealthResult
@@ -511,8 +463,13 @@ func TestFleetOverviewRejectsInvalidScopeBeforeProviderCall(t *testing.T) {
 	}
 }
 
-func (p *recordingProvider) Query(_ context.Context, req providerapi.QueryRequest) (providerapi.QueryResult, error) {
+func (p *recordingProvider) Query(ctx context.Context, req providerapi.QueryRequest) (providerapi.QueryResult, error) {
 	p.requests = append(p.requests, req)
+	deadline, _ := ctx.Deadline()
+	p.queryDeadlines = append(p.queryDeadlines, deadline)
+	if len(p.results) >= len(p.requests) {
+		return p.results[len(p.requests)-1], p.err
+	}
 	return p.result, p.err
 }
 
@@ -523,12 +480,13 @@ func TestQueryReturnsActionableProviderErrors(t *testing.T) {
 		statusCode int
 		detail     string
 	}{
-		{name: "authentication", err: providerapi.ErrAuthentication, statusCode: http.StatusFailedDependency, detail: "Sign in with Google"},
+		{name: "authentication", err: providerapi.ErrAuthentication, statusCode: http.StatusFailedDependency, detail: "Refresh ADC"},
 		{name: "permission", err: providerapi.ErrPermissionDenied, statusCode: http.StatusForbidden, detail: "roles/logging.viewer"},
 		{name: "rate limit", err: providerapi.ErrRateLimited, statusCode: http.StatusTooManyRequests, detail: "rate-limited"},
 		{name: "unavailable", err: providerapi.ErrUnavailable, statusCode: http.StatusServiceUnavailable, detail: "temporarily unavailable"},
 		{name: "invalid query", err: providerapi.ErrInvalidQuery, statusCode: http.StatusBadRequest, detail: "rejected the query"},
 		{name: "configuration", err: providerapi.ErrConfiguration, statusCode: http.StatusFailedDependency, detail: "Cloud Logging API"},
+		{name: "deadline", err: context.DeadlineExceeded, statusCode: http.StatusServiceUnavailable, detail: "temporarily unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -552,6 +510,78 @@ func TestQueryReturnsActionableProviderErrors(t *testing.T) {
 				t.Fatal("provider error detail leaked to the response")
 			}
 		})
+	}
+}
+
+func TestQueryRejectsOverlongCompiledFilterAndInvalidSourceBeforeProviderCall(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New()}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	now := time.Now().UTC()
+	predicates := make([]map[string]any, 10)
+	for i := range predicates {
+		predicates[i] = map[string]any{"path": fmt.Sprintf("field%d", i), "operator": "equals", "value": strings.Repeat("x", 2048)}
+	}
+	tests := []struct {
+		body map[string]any
+		want string
+	}{
+		{body: map[string]any{"profileId": created.ID, "mode": "structured", "start": now.Add(-time.Hour), "end": now, "limit": 20, "predicates": predicates}, want: "compiled filter exceeds the 19000-byte limit; shorten the query or select fewer filters"},
+		{body: map[string]any{"profileId": created.ID, "mode": "leopard", "start": now.Add(-time.Hour), "end": now, "limit": 20, "sources": []string{"INVALID"}}, want: "valid Cloud Run service name"},
+	}
+	for _, test := range tests {
+		response := request(t, s, http.MethodPost, "/api/v1/query", test.body, cookie, testOrigin)
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), test.want) {
+			t.Errorf("response %d: %s", response.Code, response.Body.String())
+		}
+	}
+	if len(p.requests) != 0 {
+		t.Fatalf("provider received invalid filters: %#v", p.requests)
+	}
+}
+
+func TestQueryCursorExpiryIsOnlyReturnedWithNextCursor(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New()}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	body := map[string]any{"profileId": created.ID, "mode": "leopard", "start": time.Now().Add(-time.Hour), "end": time.Now(), "limit": 20}
+	response := request(t, s, http.MethodPost, "/api/v1/query", body, cookie, testOrigin)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "expiresAt") {
+		t.Fatalf("terminal page response %d: %s", response.Code, response.Body.String())
+	}
+	p.result.NextPageToken = "next-page"
+	response = request(t, s, http.MethodPost, "/api/v1/query", body, cookie, testOrigin)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "nextCursor") || !strings.Contains(response.Body.String(), "expiresAt") {
+		t.Fatalf("paginated response %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestOversizedLogPageGuidanceUsesLimit(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New(), err: providerapi.ErrResponseTooLarge}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	response := request(t, s, http.MethodPost, "/api/v1/query", map[string]any{
+		"profileId": created.ID, "mode": "leopard", "start": time.Now().Add(-time.Hour), "end": time.Now(), "limit": 20,
+	}, cookie, testOrigin)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "smaller limit") || strings.Contains(response.Body.String(), "pageSize") {
+		t.Fatalf("oversized page response %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestLogOperationsHaveDeadlineBelowHTTPWriteTimeout(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New()}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	now := time.Now()
+	response := request(t, s, http.MethodPost, "/api/v1/query", map[string]any{
+		"profileId": created.ID, "mode": "leopard", "start": now.Add(-time.Hour), "end": now, "limit": 20,
+	}, cookie, testOrigin)
+	if response.Code != http.StatusOK || len(p.queryDeadlines) != 1 || p.queryDeadlines[0].IsZero() || time.Until(p.queryDeadlines[0]) > 30*time.Second {
+		t.Fatalf("query deadline = %v, response = %d", p.queryDeadlines, response.Code)
 	}
 }
 
@@ -622,11 +652,13 @@ func TestStructuredQueryRejectsMalformedAndTooManyPredicates(t *testing.T) {
 
 func TestRequestContextQueriesAllServicesInExactWindowAndAscendingOrder(t *testing.T) {
 	event := time.Date(2026, 3, 4, 12, 30, 0, 0, time.UTC)
-	entries := make([]providerapi.Entry, providerapi.MaxPageSize+1)
-	for i := range entries {
-		entries[i] = providerapi.Entry{ID: strconv.Itoa(i), Timestamp: event.Add(time.Duration(i-providerapi.MaxPageSize/2) * time.Second)}
+	beforeEntries := make([]providerapi.Entry, providerapi.MaxPageSize/2)
+	afterEntries := make([]providerapi.Entry, providerapi.MaxPageSize/2)
+	for i := range beforeEntries {
+		beforeEntries[i] = providerapi.Entry{ID: strconv.Itoa(i), Timestamp: event.Add(time.Duration(i-100) * time.Second)}
+		afterEntries[i] = providerapi.Entry{ID: strconv.Itoa(i + 100), Timestamp: event.Add(time.Duration(i) * time.Second)}
 	}
-	p := &recordingProvider{Provider: fake.New(), result: providerapi.QueryResult{Entries: entries}}
+	p := &recordingProvider{Provider: fake.New(), results: []providerapi.QueryResult{{Entries: beforeEntries}, {Entries: afterEntries}}}
 	s, pairing := newTestServerWithProvider(t, p)
 	cookie := pair(t, s, pairing)
 	created := createTestProfile(t, s, cookie)
@@ -635,28 +667,37 @@ func TestRequestContextQueriesAllServicesInExactWindowAndAscendingOrder(t *testi
 	if w.Code != http.StatusOK {
 		t.Fatalf("context status %d: %s", w.Code, w.Body.String())
 	}
-	if len(p.requests) != 1 {
+	if len(p.requests) != 2 {
 		t.Fatalf("provider requests: %d", len(p.requests))
 	}
-	req := p.requests[0]
-	if req.ProjectID != "synthetic-project-123" || req.PageSize != 200 || req.PageToken != "" || req.Order != providerapi.OrderAscending {
-		t.Fatalf("unexpected context provider request: %#v", req)
+	if p.requests[0].Order != providerapi.OrderDescending || p.requests[1].Order != providerapi.OrderAscending {
+		t.Fatalf("context query orders = %q, %q", p.requests[0].Order, p.requests[1].Order)
 	}
-	for _, want := range []string{
-		`resource.type = "cloud_run_revision"`, `timestamp >= "2026-03-04T12:15:00Z"`, `timestamp <= "2026-03-04T12:45:00Z"`,
-		`jsonPayload.requestId = "request-123"`, `trace = "trace-123"`,
-	} {
-		if !strings.Contains(req.Filter, want) {
-			t.Errorf("filter missing %q: %s", want, req.Filter)
+	for _, deadline := range p.queryDeadlines {
+		if deadline.IsZero() || time.Until(deadline) > 30*time.Second {
+			t.Fatalf("request-context deadline = %v", deadline)
 		}
 	}
-	if strings.Contains(req.Filter, "service_name") || strings.Contains(req.Filter, "severity") {
-		t.Fatalf("context query was not project-wide: %s", req.Filter)
+	for _, req := range p.requests {
+		if req.ProjectID != "synthetic-project-123" || req.PageSize != 100 || req.PageToken != "" {
+			t.Fatalf("unexpected context provider request: %#v", req)
+		}
+		for _, want := range []string{`resource.type = "cloud_run_revision"`, `jsonPayload.requestId = "request-123"`, `trace = "trace-123"`} {
+			if !strings.Contains(req.Filter, want) {
+				t.Errorf("filter missing %q: %s", want, req.Filter)
+			}
+		}
+		if strings.Contains(req.Filter, "service_name") || strings.Contains(req.Filter, "severity") {
+			t.Fatalf("context query was not project-wide: %s", req.Filter)
+		}
+	}
+	if !strings.Contains(p.requests[0].Filter, `timestamp < "2026-03-04T12:30:00Z"`) || !strings.Contains(p.requests[1].Filter, `timestamp >= "2026-03-04T12:30:00Z"`) {
+		t.Fatalf("context queries were not split around event: %#v", p.requests)
 	}
 	var output struct {
 		Entries []providerapi.Entry `json:"entries"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &output); err != nil || len(output.Entries) != providerapi.MaxPageSize || output.Entries[0].ID != "0" {
+	if err := json.Unmarshal(w.Body.Bytes(), &output); err != nil || len(output.Entries) != providerapi.MaxPageSize || output.Entries[0].ID != "0" || output.Entries[len(output.Entries)-1].ID != "199" {
 		t.Fatalf("unexpected context response: %#v, %v", output, err)
 	}
 }
@@ -700,5 +741,18 @@ func TestRequestContextSanitizesProviderAndResponseSizeErrors(t *testing.T) {
 				t.Fatalf("oversized response status %d: %s", w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestRequestContextDeadlineIsSanitizedUnavailable(t *testing.T) {
+	p := &recordingProvider{Provider: fake.New(), err: context.DeadlineExceeded}
+	s, pairing := newTestServerWithProvider(t, p)
+	cookie := pair(t, s, pairing)
+	created := createTestProfile(t, s, cookie)
+	response := request(t, s, http.MethodPost, "/api/v1/request-context", map[string]any{
+		"profileId": created.ID, "eventTimestamp": time.Now(), "requestId": "request-1",
+	}, cookie, testOrigin)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "temporarily unavailable") || strings.Contains(response.Body.String(), "deadline") {
+		t.Fatalf("deadline response %d: %s", response.Code, response.Body.String())
 	}
 }

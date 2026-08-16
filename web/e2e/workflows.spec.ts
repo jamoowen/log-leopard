@@ -6,6 +6,7 @@ async function openLogs(page: import("@playwright/test").Page) {
 
 test("fleet overview opens a selected service", async ({ page }) => {
   await page.goto("/?mock=1");
+  await page.getByRole("button", { name: "Fleet overview" }).click();
   await expect(
     page.getByRole("table", { name: /Cloud Run fleet metrics/ }),
   ).toBeVisible();
@@ -105,7 +106,7 @@ test("service health drills into the exact log interval", async ({
 test("primary view survives reload and invalid values fall back safely", async ({
   page,
 }) => {
-  await page.goto("/?mock=1&view=logs");
+  await page.goto("/?mock=1");
   await expect(
     page.getByRole("button", { name: "Logs", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -114,9 +115,12 @@ test("primary view survives reload and invalid values fall back safely", async (
 
   await page.goto("/?mock=1&view=unexpected");
   await expect(
-    page.getByRole("button", { name: "Fleet overview" }),
+    page.getByRole("button", { name: "Logs", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page).not.toHaveURL(/view=/);
+
+  await page.getByRole("button", { name: "Fleet overview" }).click();
+  await expect(page).toHaveURL(/view=fleet/);
 });
 
 test("command palette navigates primary views", async ({ page }) => {
@@ -135,7 +139,7 @@ test("command palette navigates primary views", async ({ page }) => {
   await page.getByLabel("Search commands").press("End");
   await page.getByLabel("Search commands").press("Enter");
   await expect(page.getByRole("textbox", { name: "Query" })).toBeVisible();
-  await expect(page).toHaveURL(/view=logs/);
+  await expect(page).not.toHaveURL(/view=/);
 
   await page.keyboard.press("Control+k");
   await page.getByLabel("Search commands").fill("fleet overview");
@@ -187,6 +191,49 @@ test("load more appends the next result page", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Load more" }).click();
   await expect(page.getByText("140 entries loaded")).toBeVisible();
   await expect(page.getByRole("button", { name: "Load more" })).toBeHidden();
+});
+
+test("log text can be drag-selected across multiple rows", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await openLogs(page);
+  await page.getByRole("button", { name: /Run query/ }).click();
+
+  const messages = page.locator(".row-message");
+  await expect(messages.nth(2)).toBeVisible();
+  const start = await messages.first().boundingBox();
+  expect(start).not.toBeNull();
+
+  await page.mouse.move(start!.x + 2, start!.y + start!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(start!.x + 12, start!.y + start!.height / 2);
+  await page.locator(".log-list").evaluate((list) => {
+    list.scrollTop = 38 * 30;
+  });
+  const target = page.locator('.log-row[data-index="35"] .row-message');
+  await expect(target).toBeVisible();
+  const end = await target.boundingBox();
+  expect(end).not.toBeNull();
+  await page.mouse.move(end!.x + end!.width - 2, end!.y + end!.height / 2, {
+    steps: 12,
+  });
+  await page.mouse.up();
+
+  const selectedRows = await page.locator(".log-row").evaluateAll((rows) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return [];
+    }
+    const range = selection.getRangeAt(0);
+    return rows
+      .filter((row) => range.intersectsNode(row))
+      .map((row) => Number(row.getAttribute("data-index")));
+  });
+  expect(selectedRows).toContain(0);
+  expect(selectedRows).toContain(35);
+  expect(selectedRows.length).toBeGreaterThanOrEqual(36);
 });
 
 test("editing query controls marks loaded results as stale", async ({
@@ -317,16 +364,72 @@ test("identical custom requests refetch and polling does not lock execution", as
   const run = page.getByRole("button", { name: /Run query|Running/ });
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page.getByText(/entries loaded/)).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("Custom start")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Custom" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("button", { name: "Custom" }).click();
+  await expect(page.getByLabel("Custom start")).toHaveValue("2026-07-01T10:00");
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(run).toContainText("Running");
   await expect(page.getByText(/entries loaded/)).toBeVisible();
 
   await page.getByRole("combobox", { name: "Polling" }).click();
   await page.getByRole("option", { name: "Every 5 seconds" }).click();
+  await expect(page.getByRole("button", { name: "15 min" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect
     .poll(() => run.textContent(), { timeout: 6_500, intervals: [50] })
     .toContain("Running");
   await expect(page.getByText(/entries loaded/)).toBeVisible();
+});
+
+test("manual sources are visible, removable, and idempotent", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await page.getByRole("button", { name: /All sources/ }).click();
+  const input = page.getByLabel("Manual service name");
+  await input.fill("manual-api");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByText("manual-api", { exact: true })).toBeVisible();
+  await input.fill("manual-api");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByRole("button", { name: /1 source/ })).toBeVisible();
+  await page.getByLabel("Remove manual-api").click();
+  await expect(
+    page.getByRole("button", { name: /All sources/ }).first(),
+  ).toBeVisible();
+});
+
+test("manual execution resets result scroll and overview shows HTTP basics", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/?mock=1");
+  await page.getByRole("button", { name: "1 hour" }).click();
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect(page.getByText("80 entries loaded")).toBeVisible();
+  await page.locator(".log-list").evaluate((list) => {
+    list.scrollTop = 600;
+  });
+  await page.getByRole("button", { name: /Run query/ }).click();
+  await expect
+    .poll(() => page.locator(".log-list").evaluate((list) => list.scrollTop))
+    .toBe(0);
+  await page.locator(".log-row").first().click();
+  const overview = page.getByRole("tabpanel", { name: "Overview" });
+  await expect(overview).toContainText("Method");
+  await expect(overview).toContainText("GET");
+  await expect(overview).toContainText("Status");
+  await expect(overview).toContainText("Request ID");
+  await expect(overview).toContainText("Trace");
 });
 
 test("changing connection clears profile-bound results and inspector state", async ({

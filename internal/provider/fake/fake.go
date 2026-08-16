@@ -21,15 +21,6 @@ func New() *Provider { return &Provider{} }
 
 func (*Provider) ADCStatus(context.Context) (bool, string) { return true, "Fake provider enabled" }
 
-func (*Provider) AuthStatus(context.Context) provider.AuthStatus {
-	return provider.AuthStatus{State: provider.AuthAvailable, Message: "Fake provider credentials are available."}
-}
-
-func (*Provider) StartGoogleAuth(context.Context, string) provider.AuthStart {
-	return provider.AuthStart{AuthStatus: provider.AuthStatus{State: provider.AuthAvailable, Message: "Fake provider credentials are available."}, AuthorizationURL: "https://example.invalid/google-auth"}
-}
-func (*Provider) CompleteGoogleAuth(context.Context, provider.GoogleAuthCallback) error { return nil }
-
 func (*Provider) Discover(context.Context, string) provider.Discovery {
 	return provider.Discovery{Services: []provider.Service{
 		{ID: "", Name: "All logs"},
@@ -51,6 +42,15 @@ func (*Provider) Query(_ context.Context, req provider.QueryRequest) (provider.Q
 		}
 	}
 	fixtures := entries()
+	if req.Filter != "" {
+		filter, err := parseFilter(req.Filter)
+		if err != nil {
+			return provider.QueryResult{}, provider.ErrInvalidQuery
+		}
+		fixtures = slices.DeleteFunc(fixtures, func(entry provider.Entry) bool {
+			return !filter.match(entry)
+		})
+	}
 	if req.Order == provider.OrderAscending {
 		slices.Reverse(fixtures)
 	}
@@ -123,17 +123,26 @@ func entries() []provider.Entry {
 	out := make([]provider.Entry, 0, len(items))
 	for i, item := range items {
 		ts := base.Add(-time.Duration(i) * time.Minute)
-		raw, _ := json.Marshal(map[string]any{
+		rawEntry := map[string]any{
 			"insertId": fmt.Sprintf("synthetic-%d", i+1), "timestamp": ts.Format(time.RFC3339Nano),
 			"severity": item.severity, "textPayload": item.message,
 			"resource": map[string]any{"type": "cloud_run_revision", "labels": map[string]string{"service_name": item.source}},
-		})
+		}
+		messageSource := "textPayload"
+		var structured map[string]any
+		if i == 2 {
+			structured = map[string]any{"message": item.message}
+			delete(rawEntry, "textPayload")
+			rawEntry["jsonPayload"] = structured
+			messageSource = "jsonPayload.message"
+		}
+		raw, _ := json.Marshal(rawEntry)
 		out = append(out, provider.Entry{
 			ID: fmt.Sprintf("synthetic-%d", i+1), Timestamp: ts, Severity: normalizeSeverity(item.severity),
-			SeverityOriginal: item.severity, Message: item.message, MessageSource: "textPayload",
+			SeverityOriginal: item.severity, Message: item.message, MessageSource: messageSource,
 			Source: item.source, SourceOriginal: "projects/synthetic-project/logs/run.googleapis.com%2Fstdout",
 			RequestID: "synthetic-request-123", Trace: "projects/synthetic-project/traces/synthetic-trace-123",
-			Labels: map[string]string{"fixture": "synthetic"}, Structured: nil, Raw: raw,
+			Labels: map[string]string{"fixture": "synthetic"}, Structured: structured, Raw: raw,
 		})
 	}
 	return out

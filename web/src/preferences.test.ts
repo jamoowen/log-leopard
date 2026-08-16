@@ -17,6 +17,10 @@ import {
 describe("preference persistence", () => {
   beforeEach(() => localStorage.clear());
 
+  it("starts Leopard queries with an empty draft", () => {
+    expect(defaults.drafts.leopard).toBe("");
+  });
+
   it("round trips non-result preferences", () => {
     const severities = [
       "DEFAULT",
@@ -46,6 +50,15 @@ describe("preference persistence", () => {
     expect(localStorage.getItem("logleopard.preferences.v1")).not.toContain(
       "entries",
     );
+  });
+
+  it("drops persisted source names that the backend cannot query", () => {
+    localStorage.setItem(
+      "logleopard.preferences.v1",
+      JSON.stringify({ sources: ["valid-api", "INVALID", "api-"] }),
+    );
+
+    expect(loadPreferences().sources).toEqual(["valid-api"]);
   });
 
   it("remembers health targets and windows by connection", () => {

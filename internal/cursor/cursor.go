@@ -40,12 +40,18 @@ func Fingerprint(parts ...string) string {
 }
 
 func (s *Signer) Encode(token, fingerprint string) (string, error) {
-	b, err := json.Marshal(payload{Token: token, Fingerprint: fingerprint, Expires: s.ExpiresAt().Unix()})
+	encoded, _, err := s.EncodeWithExpiry(token, fingerprint)
+	return encoded, err
+}
+
+func (s *Signer) EncodeWithExpiry(token, fingerprint string) (string, time.Time, error) {
+	expires := s.ExpiresAt().UTC().Truncate(time.Second)
+	b, err := json.Marshal(payload{Token: token, Fingerprint: fingerprint, Expires: expires.Unix()})
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	sig := s.sign(b)
-	return base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
+	return base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig), expires, nil
 }
 
 func (s *Signer) ExpiresAt() time.Time {

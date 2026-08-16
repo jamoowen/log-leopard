@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +23,11 @@ import (
 	webassets "github.com/jamoowen/log-leopard/web"
 )
 
+const logRequestTimeout = 30 * time.Second
+
 type Config struct {
 	Host           string
 	Origin         string
-	BrowserURL     string
 	Profiles       *profile.Store
 	Provider       LogProvider
 	HealthProvider HealthProvider
@@ -38,9 +38,6 @@ type Config struct {
 
 type LogProvider interface {
 	ADCStatus(context.Context) (bool, string)
-	AuthStatus(context.Context) provider.AuthStatus
-	StartGoogleAuth(context.Context, string) provider.AuthStart
-	CompleteGoogleAuth(context.Context, provider.GoogleAuthCallback) error
 	Discover(context.Context, string) provider.Discovery
 	Query(context.Context, provider.QueryRequest) (provider.QueryResult, error)
 }
@@ -63,11 +60,6 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Origin != "http://"+cfg.Host && cfg.Origin != "https://"+cfg.Host {
 		return nil, errors.New("origin must exactly match the listening host")
 	}
-	browserURL, err := normalizeBrowserURL(cfg.BrowserURL, cfg.Origin)
-	if err != nil {
-		return nil, err
-	}
-	cfg.BrowserURL = browserURL
 	if cfg.Profiles == nil || cfg.Provider == nil || cfg.HealthProvider == nil || cfg.Sessions == nil || cfg.Cursors == nil {
 		return nil, errors.New("server dependencies are required")
 	}
@@ -86,26 +78,9 @@ func New(cfg Config) (*Server, error) {
 	api := humago.New(mux, humaConfig)
 	s := &Server{API: api, cfg: cfg}
 	s.register()
-	mux.HandleFunc("GET /api/v1/auth/google/callback", s.googleCallback)
 	mux.Handle("/", spaHandler(webassets.Assets()))
 	s.Handler = s.security(s.authenticate(mux))
 	return s, nil
-}
-
-func normalizeBrowserURL(browserURL, fallback string) (string, error) {
-	if browserURL == "" {
-		browserURL = fallback
-	}
-	parsed, err := url.Parse(browserURL)
-	if err != nil {
-		return "", fmt.Errorf("parse browser URL: %w", err)
-	}
-	ip := net.ParseIP(parsed.Hostname())
-	if parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || ip == nil || !ip.IsLoopback() {
-		return "", errors.New("browser URL must be an HTTP URL on a numeric loopback address without credentials, query, or fragment")
-	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/"
-	return parsed.String(), nil
 }
 
 func validateHost(hostport string) error {
@@ -177,16 +152,8 @@ type servicesOutput struct {
 }
 type authStatusOutput struct {
 	Body struct {
-		Available bool               `json:"available" doc:"Whether backend Google credentials or Application Default Credentials are available."`
-		State     provider.AuthState `json:"state" enum:"unconfigured,available,needs-auth,pending,failed" doc:"Sanitized local Google credential state."`
-		Message   string             `json:"message" doc:"Sanitized credential status message."`
-	}
-}
-type authStartOutput struct {
-	Body struct {
-		AuthorizationURL string             `json:"authorizationUrl,omitempty" doc:"Google authorization URL. Contains no LogLeopard credentials."`
-		State            provider.AuthState `json:"state" enum:"unconfigured,available,needs-auth,pending,failed" doc:"Sanitized local Google credential state."`
-		Message          string             `json:"message" doc:"Sanitized credential status message."`
+		Available bool   `json:"available" doc:"Whether Application Default Credentials are available."`
+		Message   string `json:"message" doc:"Sanitized Application Default Credential status message."`
 	}
 }
 type queryInput struct {
@@ -207,7 +174,7 @@ type queryOutput struct {
 	Body struct {
 		Entries    []provider.Entry `json:"entries" doc:"Normalized log entries in descending timestamp order."`
 		NextCursor string           `json:"nextCursor,omitempty" doc:"Opaque cursor for the next page."`
-		ExpiresAt  time.Time        `json:"expiresAt" doc:"Cursor expiry timestamp."`
+		ExpiresAt  time.Time        `json:"expiresAt,omitzero" doc:"Cursor expiry timestamp, present only when nextCursor is present."`
 	}
 }
 type requestContextInput struct {
@@ -272,7 +239,6 @@ func (s *Server) register() {
 	huma.Register(s.API, operation("pair", http.MethodPost, "/api/v1/session/pair", "Pair browser session", "Exchange the single-use startup token for a local HttpOnly session cookie.", nil), s.pair)
 	huma.Register(s.API, operation("logout", http.MethodPost, "/api/v1/session/logout", "Log out", "Invalidate the current local session and expire its cookie.", session), s.logout)
 	huma.Register(s.API, operation("auth-status", http.MethodGet, "/api/v1/auth/status", "Get credential status", "Report sanitized GCP Application Default Credential availability.", session), s.authStatus)
-	huma.Register(s.API, operation("auth-google-start", http.MethodPost, "/api/v1/auth/google/start", "Start Google sign-in", "Start a backend-owned Google OAuth installed-app flow.", session), s.startGoogleAuth)
 	huma.Register(s.API, operation("list-profiles", http.MethodGet, "/api/v1/profiles", "List connection profiles", "List local GCP connection profiles without credentials.", session), s.listProfiles)
 	huma.Register(s.API, operation("create-profile", http.MethodPost, "/api/v1/profiles", "Create connection profile", "Create a local profile containing a display name and GCP project ID.", session), s.createProfile)
 	huma.Register(s.API, operation("update-profile", http.MethodPut, "/api/v1/profiles/{id}", "Update connection profile", "Replace the name and GCP project ID of a local connection profile.", session), s.updateProfile)
@@ -308,35 +274,10 @@ func (s *Server) logout(ctx context.Context, _ *emptyInput) (*cookieOutput, erro
 	return out, nil
 }
 
-func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
-	// The Google cross-site return cannot rely on the Strict pairing cookie; state and PKCE bind this callback.
-	err := s.cfg.Provider.CompleteGoogleAuth(r.Context(), provider.GoogleAuthCallback{RedirectURI: s.cfg.Origin + "/api/v1/auth/google/callback", State: r.URL.Query().Get("state"), Code: r.URL.Query().Get("code"), Error: r.URL.Query().Get("error")})
-	if err != nil {
-		http.Redirect(w, r, s.cfg.BrowserURL+"?auth=failed", http.StatusFound)
-		return
-	}
-	redirect, _ := url.Parse(s.cfg.BrowserURL)
-	query := redirect.Query()
-	query.Set("auth", "success")
-	redirect.RawQuery = query.Encode()
-	http.Redirect(w, r, redirect.String(), http.StatusFound)
-}
-
 func (s *Server) authStatus(ctx context.Context, _ *emptyInput) (*authStatusOutput, error) {
 	available, message := s.cfg.Provider.ADCStatus(ctx)
 	out := &authStatusOutput{}
-	status := s.cfg.Provider.AuthStatus(ctx)
-	out.Body.Available, out.Body.State, out.Body.Message = available, status.State, message
-	if !available {
-		out.Body.Message = status.Message
-	}
-	return out, nil
-}
-
-func (s *Server) startGoogleAuth(ctx context.Context, _ *emptyInput) (*authStartOutput, error) {
-	start := s.cfg.Provider.StartGoogleAuth(ctx, s.cfg.Origin+"/api/v1/auth/google/callback")
-	out := &authStartOutput{}
-	out.Body.AuthorizationURL, out.Body.State, out.Body.Message = start.AuthorizationURL, start.State, start.Message
+	out.Body.Available, out.Body.Message = available, message
 	return out, nil
 }
 
@@ -396,6 +337,8 @@ func (s *Server) discover(ctx context.Context, input *sourcesInput) (*servicesOu
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, logRequestTimeout)
+	defer cancel()
 	discovery := s.cfg.Provider.Discover(ctx, p.ProjectID)
 	out := &servicesOutput{
 		Warning: discovery.Warning, WarningCode: discovery.WarningCode,
@@ -453,23 +396,24 @@ func (s *Server) queryLogs(ctx context.Context, input *queryInput) (*queryOutput
 			return nil, huma.Error400BadRequest("cursor is invalid or expired")
 		}
 	}
+	ctx, cancel := context.WithTimeout(ctx, logRequestTimeout)
+	defer cancel()
 	result, err := s.cfg.Provider.Query(ctx, provider.QueryRequest{ProjectID: p.ProjectID, Filter: filter, PageSize: input.Body.Limit, PageToken: pageToken})
 	if err != nil {
 		if errors.Is(err, provider.ErrResponseTooLarge) {
-			return nil, huma.Error422UnprocessableEntity("log page exceeds the response size limit; use a smaller pageSize")
+			return nil, huma.Error422UnprocessableEntity("log page exceeds the response size limit; use a smaller limit")
 		}
 		return nil, s.providerFailure("query_logs", err)
 	}
 	out := &queryOutput{}
 	out.Body.Entries = result.Entries
-	out.Body.ExpiresAt = s.cfg.Cursors.ExpiresAt().UTC()
 	if result.NextPageToken != "" {
-		out.Body.NextCursor, err = s.cfg.Cursors.Encode(result.NextPageToken, fingerprint)
+		out.Body.NextCursor, out.Body.ExpiresAt, err = s.cfg.Cursors.EncodeWithExpiry(result.NextPageToken, fingerprint)
 		if err != nil {
 			return nil, s.internal("encode_cursor")
 		}
 	}
-	if err := s.validateResponseSize(out.Body, "log page exceeds the response size limit; use a smaller pageSize"); err != nil {
+	if err := s.validateResponseSize(out.Body, "log page exceeds the response size limit; use a smaller limit"); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -480,12 +424,27 @@ func (s *Server) requestContext(ctx context.Context, input *requestContextInput)
 	if err != nil {
 		return nil, err
 	}
-	filter, err := query.CompileRequestContext(input.Body.EventTimestamp, input.Body.RequestID, input.Body.TraceID)
+	beforeFilter, err := query.CompileRequestContextBefore(input.Body.EventTimestamp, input.Body.RequestID, input.Body.TraceID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	result, err := s.cfg.Provider.Query(ctx, provider.QueryRequest{
-		ProjectID: p.ProjectID, Filter: filter, PageSize: provider.MaxPageSize, Order: provider.OrderAscending,
+	afterFilter, err := query.CompileRequestContextAfter(input.Body.EventTimestamp, input.Body.RequestID, input.Body.TraceID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	ctx, cancel := context.WithTimeout(ctx, logRequestTimeout)
+	defer cancel()
+	before, err := s.cfg.Provider.Query(ctx, provider.QueryRequest{
+		ProjectID: p.ProjectID, Filter: beforeFilter, PageSize: provider.MaxPageSize / 2, Order: provider.OrderDescending,
+	})
+	if err != nil {
+		if errors.Is(err, provider.ErrResponseTooLarge) {
+			return nil, huma.Error422UnprocessableEntity("request context exceeds the response size limit")
+		}
+		return nil, s.providerFailure("request_context", err)
+	}
+	after, err := s.cfg.Provider.Query(ctx, provider.QueryRequest{
+		ProjectID: p.ProjectID, Filter: afterFilter, PageSize: provider.MaxPageSize / 2, Order: provider.OrderAscending,
 	})
 	if err != nil {
 		if errors.Is(err, provider.ErrResponseTooLarge) {
@@ -494,7 +453,21 @@ func (s *Server) requestContext(ctx context.Context, input *requestContextInput)
 		return nil, s.providerFailure("request_context", err)
 	}
 	out := &requestContextOutput{}
-	out.Body.Entries = result.Entries
+	out.Body.Entries = make([]provider.Entry, 0, len(before.Entries)+len(after.Entries))
+	seen := make(map[string]struct{}, len(before.Entries)+len(after.Entries))
+	for _, entry := range append(before.Entries, after.Entries...) {
+		if _, duplicate := seen[entry.ID]; duplicate {
+			continue
+		}
+		seen[entry.ID] = struct{}{}
+		out.Body.Entries = append(out.Body.Entries, entry)
+	}
+	sort.Slice(out.Body.Entries, func(i, j int) bool {
+		if out.Body.Entries[i].Timestamp.Equal(out.Body.Entries[j].Timestamp) {
+			return out.Body.Entries[i].ID < out.Body.Entries[j].ID
+		}
+		return out.Body.Entries[i].Timestamp.Before(out.Body.Entries[j].Timestamp)
+	})
 	if len(out.Body.Entries) > provider.MaxPageSize {
 		out.Body.Entries = out.Body.Entries[:provider.MaxPageSize]
 	}
@@ -640,7 +613,7 @@ func (s *Server) providerFailure(operation string, err error) error {
 	case errors.Is(err, provider.ErrAuthentication):
 		category = "authentication"
 		statusCode = http.StatusFailedDependency
-		message = "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
+		message = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
 	case errors.Is(err, provider.ErrPermissionDenied):
 		category = "permission_denied"
 		statusCode = http.StatusForbidden
@@ -650,6 +623,10 @@ func (s *Server) providerFailure(operation string, err error) error {
 		statusCode = http.StatusTooManyRequests
 		message = "Google Cloud temporarily rate-limited the request. Wait briefly, then retry."
 	case errors.Is(err, provider.ErrUnavailable):
+		category = "unavailable"
+		statusCode = http.StatusServiceUnavailable
+		message = "Google Cloud Logging is temporarily unavailable. Retry shortly."
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		category = "unavailable"
 		statusCode = http.StatusServiceUnavailable
 		message = "Google Cloud Logging is temporarily unavailable. Retry shortly."
@@ -674,7 +651,7 @@ func (s *Server) monitoringFailure(operation string, err error) error {
 	case errors.Is(err, provider.ErrAuthentication):
 		category = "authentication"
 		statusCode = http.StatusFailedDependency
-		message = "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
+		message = "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
 	case errors.Is(err, provider.ErrPermissionDenied):
 		category = "permission_denied"
 		statusCode = http.StatusForbidden
@@ -707,7 +684,7 @@ func requestFromContext(ctx context.Context) (*http.Request, bool) {
 
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/api/v1/session/pair" || r.URL.Path == "/api/v1/auth/google/callback" {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/api/v1/session/pair" {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestContextKey{}, r)))
 			return
 		}

@@ -29,3 +29,24 @@ func TestCursorBindingTamperingAndExpiry(t *testing.T) {
 		t.Fatalf("expired cursor got %v", err)
 	}
 }
+
+func TestEncodeWithExpiryReturnsExactSignedExpiry(t *testing.T) {
+	s := New(time.Minute)
+	now := time.Date(2026, 8, 16, 12, 0, 0, 750_000_000, time.UTC)
+	s.now = func() time.Time { return now }
+	encoded, expires, err := s.EncodeWithExpiry("provider-token", Fingerprint("query"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := now.Add(time.Minute).Truncate(time.Second); !expires.Equal(want) {
+		t.Fatalf("expiry = %s, want %s", expires, want)
+	}
+	now = expires.Add(-time.Nanosecond)
+	if _, err := s.Decode(encoded, Fingerprint("query")); err != nil {
+		t.Fatalf("cursor expired before returned expiry: %v", err)
+	}
+	now = expires
+	if _, err := s.Decode(encoded, Fingerprint("query")); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("cursor remained valid at returned expiry: %v", err)
+	}
+}

@@ -101,11 +101,11 @@ const modeLabels: Record<QueryMode, string> = {
   native: "Native GCP",
 };
 const pollIntervals: PollInterval[] = [0, 5, 10, 30];
+const maxSelectableEntries = 1_000;
 type PrimaryView = "fleet" | "health" | "logs";
-
 function initialPrimaryView(): PrimaryView {
   const view = new URLSearchParams(window.location.search).get("view");
-  return view === "health" || view === "logs" ? view : "fleet";
+  return view === "fleet" || view === "health" ? view : "logs";
 }
 interface Execution {
   request: QueryRequest;
@@ -161,6 +161,7 @@ function App() {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [manualSource, setManualSource] = useState("");
   const [customOpen, setCustomOpen] = useState(false);
+  const [rangeMode, setRangeMode] = useState<"preset" | "custom">("preset");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [history, setHistory] = useState(() =>
@@ -184,16 +185,19 @@ function App() {
     "checking" | "pairing" | "ready" | "unpaired"
   >(() => (pairingToken.current ? "pairing" : "checking"));
   const [sessionRevision, setSessionRevision] = useState(0);
-  const [oauthFinishError, setOAuthFinishError] = useState<string>();
+  const [credentialRecoveryPending, setCredentialRecoveryPending] =
+    useState(false);
   const paletteTriggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef(false);
   const runRef = useRef(0);
   const previousProfileRef = useRef<string | undefined>(undefined);
+  const previousActiveProjectRef = useRef<
+    { profileId: string; projectId: string } | undefined
+  >(undefined);
   const previousCredentialAvailabilityRef = useRef<boolean | undefined>(
     undefined,
   );
-  const handledOAuthReturnRef = useRef(false);
   const executeRef = useRef<(poll?: boolean) => void>(() => undefined);
   const queryClient = useQueryClient();
 
@@ -229,7 +233,7 @@ function App() {
   }, []);
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (appView === "fleet") url.searchParams.delete("view");
+    if (appView === "logs") url.searchParams.delete("view");
     else url.searchParams.set("view", appView);
     const next = `${url.pathname}${url.search}${url.hash}`;
     const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -240,8 +244,6 @@ function App() {
     queryKey: ["auth-status"],
     queryFn: () => api.authStatus(),
     enabled: sessionState === "checking" || sessionState === "ready",
-    refetchInterval: (query) =>
-      query.state.data?.state === "pending" ? 1_000 : false,
   });
   const sessionPhase =
     sessionState === "checking" && authStatus.isSuccess
@@ -272,13 +274,55 @@ function App() {
     queryFn: () => api.sources(activeProfile!.id),
     enabled: sessionPhase === "ready" && Boolean(activeProfile),
   });
+  useEffect(() => {
+    if (!activeProfile) return;
+    const previous = previousActiveProjectRef.current;
+    if (
+      previous?.profileId === activeProfile.id &&
+      previous.projectId !== activeProfile.projectId
+    ) {
+      void queryClient.cancelQueries({ queryKey: ["query"] });
+      void queryClient.cancelQueries({ queryKey: ["request-context"] });
+      queryClient.removeQueries({ queryKey: ["query"] });
+      queryClient.removeQueries({ queryKey: ["request-context"] });
+      setExecuted(null);
+      setSelected(null);
+      setContextSelected(null);
+      update({ sources: [] });
+      saveHealthPreferences(activeProfile.id, { target: "", window: "1h" });
+      setHealthRevision((revision) => revision + 1);
+      void queryClient.resetQueries({
+        queryKey: ["sources", activeProfile.id],
+      });
+      void queryClient.resetQueries({
+        queryKey: ["service-health", activeProfile.id],
+      });
+      void queryClient.resetQueries({
+        queryKey: ["fleet-overview", activeProfile.id],
+      });
+    }
+    previousActiveProjectRef.current = {
+      profileId: activeProfile.id,
+      projectId: activeProfile.projectId,
+    };
+  }, [activeProfile, queryClient]);
   const saveProfile = useMutation({
     mutationFn: ({ input, id }: { input: ProfileInput; id?: string }) =>
       api.saveProfile(input, id),
     onSuccess: (profile) => {
       const previous = profileList?.find((item) => item.id === profile.id);
+      const projectChanged = Boolean(
+        previous && previous.projectId !== profile.projectId,
+      );
       void queryClient.invalidateQueries({ queryKey: ["profiles"] });
-      if (previous && previous.projectId !== profile.projectId) {
+      if (projectChanged) {
+        void queryClient.cancelQueries({ queryKey: ["query"] });
+        void queryClient.cancelQueries({ queryKey: ["request-context"] });
+        queryClient.removeQueries({ queryKey: ["query"] });
+        queryClient.removeQueries({ queryKey: ["request-context"] });
+        setExecuted(null);
+        setSelected(null);
+        setContextSelected(null);
         saveHealthPreferences(profile.id, { target: "", window: "1h" });
         setHealthRevision((revision) => revision + 1);
         void queryClient.resetQueries({ queryKey: ["sources", profile.id] });
@@ -289,47 +333,12 @@ function App() {
           queryKey: ["fleet-overview", profile.id],
         });
       }
-      update({ profileId: profile.id });
+      update({
+        profileId: profile.id,
+        ...(projectChanged ? { sources: [] } : {}),
+      });
     },
   });
-  const startGoogleAuth = useMutation({
-    mutationFn: () => api.startGoogleAuth(),
-    onSuccess: (start) => {
-      if (start.authorizationUrl)
-        window.location.assign(start.authorizationUrl);
-    },
-  });
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const auth = params.get("auth");
-    if (
-      (auth !== "success" && auth !== "failed") ||
-      handledOAuthReturnRef.current
-    )
-      return;
-    handledOAuthReturnRef.current = true;
-    const finish = async () => {
-      if (auth === "failed") {
-        setOAuthFinishError(
-          "Google sign-in was not completed. Start sign-in again.",
-        );
-      }
-      window.history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.hash,
-      );
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["auth-status"] }),
-        queryClient.invalidateQueries({ queryKey: ["profiles"] }),
-        queryClient.invalidateQueries({ queryKey: ["sources"] }),
-        queryClient.invalidateQueries({ queryKey: ["fleet-overview"] }),
-        queryClient.invalidateQueries({ queryKey: ["service-health"] }),
-        queryClient.invalidateQueries({ queryKey: ["query"] }),
-      ]);
-    };
-    void finish();
-  }, [queryClient]);
   useEffect(() => {
     const available = authStatus.data?.available;
     if (previousCredentialAvailabilityRef.current === false && available) {
@@ -357,6 +366,8 @@ function App() {
         signal,
       ),
     getNextPageParam: (page) => page.nextCursor,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   useEffect(() => {
     inFlightRef.current = results.isFetching;
@@ -378,20 +389,23 @@ function App() {
   const entries = useMemo(
     () =>
       activeExecution
-        ? (results.data?.pages.flatMap((page) => page.entries ?? []) ?? [])
+        ? (
+            results.data?.pages.flatMap((page) => page.entries ?? []) ?? []
+          ).slice(0, maxSelectableEntries)
         : [],
     [activeExecution, results.data?.pages],
   );
   const fields = useMemo(() => discoverFields(entries), [entries]);
+  const currentCursorPage = results.data?.pages.at(-1);
   const expired = Boolean(
-    results.data?.pages.some((page) => new Date(page.expiresAt) < new Date()),
+    results.hasNextPage &&
+      currentCursorPage?.expiresAt &&
+      new Date(currentCursorPage.expiresAt) < new Date(),
   );
   const queryUnauthorized =
     results.error instanceof ApiError && results.error.status === 401;
   const queryAuthenticationMessage =
-    results.error instanceof ApiError &&
-    results.error.status === 424 &&
-    results.error.message.includes("Google Cloud authentication")
+    results.error instanceof ApiError && results.error.status === 424
       ? results.error.message
       : undefined;
   const sessionUnavailable =
@@ -399,7 +413,7 @@ function App() {
   const sessionReady = sessionPhase === "ready" && !sessionUnavailable;
   const needsAuthentication =
     sessionReady &&
-    (!authStatus.data?.available ||
+    ((authStatus.isSuccess && !authStatus.data.available) ||
       activeProfile?.status === "needs-auth" ||
       Boolean(queryAuthenticationMessage));
   const discoveredSources = sources.data?.sources ?? [];
@@ -410,9 +424,11 @@ function App() {
     (source) => source.id.trim() === "",
   );
   const selectedSources = prefs.sources.filter(Boolean);
-  const customRangeError = customOpen
-    ? validateCustomRange(customStart, customEnd)
-    : null;
+  const manualSources = selectedSources.filter(
+    (id) => !selectableSources.some((source) => source.id === id),
+  );
+  const customRangeError =
+    rangeMode === "custom" ? validateCustomRange(customStart, customEnd) : null;
   const customRangeInvalid = customRangeError !== null;
   const predicates = prefs.predicateDrafts.map(toPredicate);
   const predicatesValid = predicates.every(Boolean) && predicates.length <= 50;
@@ -424,13 +440,15 @@ function App() {
     ...(prefs.queryMode === "structured"
       ? { predicates: prefs.predicateDrafts }
       : { query: prefs.drafts[prefs.queryMode] }),
-    range: customOpen
-      ? ["custom", customStart, customEnd]
-      : ["preset", prefs.preset],
+    range:
+      rangeMode === "custom"
+        ? ["custom", customStart, customEnd]
+        : ["preset", prefs.preset],
   });
   const resultsStale = Boolean(
     activeExecution && activeExecution.draftSignature !== currentDraftSignature,
   );
+  const selectableEntryLimitReached = entries.length >= maxSelectableEntries;
 
   const context = useQuery({
     queryKey: [
@@ -453,6 +471,8 @@ function App() {
       Boolean(
         activeExecution && selected && (selected.requestId || selected.trace),
       ),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   // TanStack Virtual owns an imperative measurement cache and is intentionally not compiler-memoized.
@@ -462,7 +482,8 @@ function App() {
     getScrollElement: () => listRef.current,
     estimateSize: () =>
       prefs.display === "compact" && pins.length === 0 ? 38 : 58,
-    overscan: 12,
+    // Mounted rows preserve native text selections; accumulation is capped below.
+    overscan: entries.length,
   });
 
   function navigateLogEntry(index: number, offset: -1 | 1) {
@@ -490,7 +511,7 @@ function App() {
       return;
     const preset =
       presets.find((item) => item.id === prefs.preset) ?? presets[1]!;
-    const useCustom = !poll && customOpen;
+    const useCustom = !poll && rangeMode === "custom";
     const end = useCustom && customEnd ? new Date(customEnd) : new Date();
     const start =
       useCustom && customStart
@@ -510,6 +531,7 @@ function App() {
     };
     setSelected(null);
     setContextSelected(null);
+    if (!poll && listRef.current) listRef.current.scrollTop = 0;
     setExecuted({
       request,
       run: ++runRef.current,
@@ -556,6 +578,7 @@ function App() {
     });
     setCustomStart(customStartValue);
     setCustomEnd(customEndValue);
+    setRangeMode("custom");
     setCustomOpen(true);
     setSelected(null);
     setContextSelected(null);
@@ -648,6 +671,10 @@ function App() {
           : [...selectedSources, id],
       });
   }
+  function addManualSource(id: string) {
+    if (id && !selectedSources.includes(id))
+      update({ sources: [...selectedSources, id] });
+  }
   function toggleSeverity(value: Severity) {
     update({
       severities: prefs.severities.includes(value)
@@ -729,6 +756,7 @@ function App() {
           }
         : { drafts: { ...prefs.drafts, [recipe.mode]: recipe.query ?? "" } }),
     });
+    setRangeMode("preset");
     setCustomOpen(false);
     setSavedOpen(false);
   }
@@ -816,7 +844,10 @@ function App() {
         group: "Polling",
         run: () => {
           update({ polling });
-          if (polling) setCustomOpen(false);
+          if (polling) {
+            setRangeMode("preset");
+            setCustomOpen(false);
+          }
         },
       }),
     ),
@@ -837,6 +868,27 @@ function App() {
       }),
     ),
   ];
+
+  async function recoverCredentials() {
+    setCredentialRecoveryPending(true);
+    try {
+      const status = await authStatus.refetch();
+      await Promise.all([
+        profiles.refetch(),
+        ...(activeProfile ? [sources.refetch()] : []),
+      ]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["service-health"] }),
+        queryClient.invalidateQueries({ queryKey: ["fleet-overview"] }),
+      ]);
+      if (status.data?.available && activeExecution)
+        await queryClient.resetQueries({
+          queryKey: ["query", activeExecution.request, activeExecution.run],
+        });
+    } finally {
+      setCredentialRecoveryPending(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -958,27 +1010,36 @@ function App() {
         <main className="workspace auth-workspace">
           <State
             icon={<LogIn />}
-            title="Sign in with Google"
+            title="Application Default Credentials required"
             detail={
               queryAuthenticationMessage
                 ? queryAuthenticationMessage
-                : (oauthFinishError ??
-                  authStatus.data?.message ??
-                  googleCloudAuthenticationMessage)
-            }
-            action={
-              <button
-                className="primary-button"
-                disabled={startGoogleAuth.isPending}
-                onClick={() => startGoogleAuth.mutate()}
-              >
-                <LogIn />
-                {startGoogleAuth.isPending
-                  ? "Starting sign-in…"
-                  : "Sign in with Google"}
-              </button>
+                : (authStatus.data?.message ?? googleCloudAuthenticationMessage)
             }
             tone="error"
+            action={
+              <>
+                {profiles.isSuccess && profileList?.length === 0 && (
+                  <button
+                    onClick={() => {
+                      setEditingProfile(undefined);
+                      setProfileOpen(true);
+                    }}
+                  >
+                    <Plus size={13} /> New connection
+                  </button>
+                )}
+                <button
+                  disabled={credentialRecoveryPending}
+                  onClick={() => void recoverCredentials()}
+                >
+                  <RotateCw size={13} />
+                  {credentialRecoveryPending
+                    ? "Checking credentials…"
+                    : "Check credentials again"}
+                </button>
+              </>
+            }
           />
         </main>
       )}
@@ -1085,12 +1146,25 @@ function App() {
                       <small>{source.kind}</small>
                     </label>
                   ))}
+                  {manualSources.map((source) => (
+                    <div className="check-row manual-source-row" key={source}>
+                      <span />
+                      <span>{source}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${source}`}
+                        onClick={() => toggleSource(source)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                   <form
                     className="manual-source"
                     onSubmit={(event) => {
                       event.preventDefault();
                       if (manualSource.trim()) {
-                        toggleSource(manualSource.trim());
+                        addManualSource(manualSource.trim());
                         setManualSource("");
                       }
                     }}
@@ -1100,6 +1174,10 @@ function App() {
                       value={manualSource}
                       onChange={(event) => setManualSource(event.target.value)}
                       placeholder="Manual service name"
+                      pattern="[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?"
+                      maxLength={49}
+                      required
+                      title="Use a Cloud Run service name containing lowercase letters, numbers, and hyphens."
                     />
                     <button>Add</button>
                   </form>
@@ -1129,13 +1207,18 @@ function App() {
               <Clock3 size={13} />
               {presets.map((preset) => (
                 <button
-                  aria-pressed={!customOpen && prefs.preset === preset.id}
+                  aria-pressed={
+                    rangeMode === "preset" && prefs.preset === preset.id
+                  }
                   key={preset.id}
                   className={
-                    !customOpen && prefs.preset === preset.id ? "active" : ""
+                    rangeMode === "preset" && prefs.preset === preset.id
+                      ? "active"
+                      : ""
                   }
                   onClick={() => {
                     update({ preset: preset.id });
+                    setRangeMode("preset");
                     setCustomOpen(false);
                   }}
                 >
@@ -1143,13 +1226,16 @@ function App() {
                 </button>
               ))}
               <button
-                aria-pressed={customOpen}
+                aria-pressed={rangeMode === "custom"}
                 aria-expanded={customOpen}
                 aria-controls="custom-popover"
-                className={customOpen ? "active" : ""}
+                className={rangeMode === "custom" ? "active" : ""}
                 onClick={() => {
                   setCustomOpen(!customOpen);
-                  if (!customOpen) update({ polling: 0 });
+                  if (rangeMode !== "custom") {
+                    setRangeMode("custom");
+                    update({ polling: 0 });
+                  }
                 }}
               >
                 Custom
@@ -1283,7 +1369,10 @@ function App() {
                 value={String(prefs.polling)}
                 onValueChange={(value) => {
                   update({ polling: Number(value) as PollInterval });
-                  if (value !== "0") setCustomOpen(false);
+                  if (value !== "0") {
+                    setRangeMode("preset");
+                    setCustomOpen(false);
+                  }
                 }}
               >
                 <Select.Trigger
@@ -1593,7 +1682,43 @@ function App() {
                 {...(sessionUnavailable ? { tone: "error" } : {})}
               />
             )}
-            {sessionReady && !needsAuthentication && !activeExecution && (
+            {sessionReady && profiles.isError && (
+              <State
+                icon={<AlertCircle />}
+                title="Connections unavailable"
+                detail={
+                  profiles.error instanceof Error
+                    ? profiles.error.message
+                    : "Connections could not be loaded."
+                }
+                action={
+                  <button onClick={() => profiles.refetch()}>
+                    <RotateCw size={13} /> Retry
+                  </button>
+                }
+                tone="error"
+              />
+            )}
+            {sessionReady &&
+              profiles.isSuccess &&
+              profileList?.length === 0 && (
+                <State
+                  icon={<Database />}
+                  title="Connect a project"
+                  detail="Add a GCP project before querying its Cloud Run logs. Credentials remain in the local backend."
+                  action={
+                    <button
+                      onClick={() => {
+                        setEditingProfile(undefined);
+                        setProfileOpen(true);
+                      }}
+                    >
+                      <Plus size={13} /> New connection
+                    </button>
+                  }
+                />
+              )}
+            {sessionReady && activeProfile && !activeExecution && (
               <State
                 icon={<Search />}
                 title="Define a query"
@@ -1716,15 +1841,23 @@ function App() {
                 })}
               </div>
             )}
-            {results.hasNextPage && entries.length > 0 && (
-              <button
-                className="load-more"
-                disabled={results.isFetchingNextPage || resultsStale}
-                aria-describedby={resultsStale ? "stale-results" : undefined}
-                onClick={() => results.fetchNextPage()}
-              >
-                {results.isFetchingNextPage ? "Loading…" : "Load more"}
-              </button>
+            {results.hasNextPage &&
+              entries.length > 0 &&
+              !selectableEntryLimitReached && (
+                <button
+                  className="load-more"
+                  disabled={results.isFetchingNextPage || resultsStale}
+                  aria-describedby={resultsStale ? "stale-results" : undefined}
+                  onClick={() => results.fetchNextPage()}
+                >
+                  {results.isFetchingNextPage ? "Loading…" : "Load more"}
+                </button>
+              )}
+            {results.hasNextPage && selectableEntryLimitReached && (
+              <p className="result-limit-note">
+                1,000 entries loaded. Narrow the query or time range to inspect
+                more results.
+              </p>
             )}
           </div>
         </section>
@@ -1795,6 +1928,42 @@ function App() {
                 </dd>
                 <dt>Source</dt>
                 <dd>{selected.source}</dd>
+                {selected.httpRequest?.method && (
+                  <>
+                    <dt>Method</dt>
+                    <dd>{selected.httpRequest.method}</dd>
+                  </>
+                )}
+                {selected.httpRequest?.url && (
+                  <>
+                    <dt>URL</dt>
+                    <dd>{selected.httpRequest.url}</dd>
+                  </>
+                )}
+                {selected.httpRequest?.status !== undefined && (
+                  <>
+                    <dt>Status</dt>
+                    <dd>{selected.httpRequest.status}</dd>
+                  </>
+                )}
+                {selected.httpRequest?.latency && (
+                  <>
+                    <dt>Latency</dt>
+                    <dd>{selected.httpRequest.latency}</dd>
+                  </>
+                )}
+                {selected.requestId && (
+                  <>
+                    <dt>Request ID</dt>
+                    <dd>{selected.requestId}</dd>
+                  </>
+                )}
+                {selected.trace && (
+                  <>
+                    <dt>Trace</dt>
+                    <dd>{selected.trace}</dd>
+                  </>
+                )}
                 <dt>Message</dt>
                 <dd className="message-detail">{selected.message}</dd>
               </dl>

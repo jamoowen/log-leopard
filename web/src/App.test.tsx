@@ -7,7 +7,6 @@ import { ApiError, type ApiClient } from "./api/types";
 const api = vi.hoisted(() => ({
   pair: vi.fn<ApiClient["pair"]>(),
   authStatus: vi.fn<ApiClient["authStatus"]>(),
-  startGoogleAuth: vi.fn<ApiClient["startGoogleAuth"]>(),
   profiles: vi.fn<ApiClient["profiles"]>(),
   saveProfile: vi.fn<ApiClient["saveProfile"]>(),
   sources: vi.fn<ApiClient["sources"]>(),
@@ -28,12 +27,21 @@ beforeEach(() => {
   sessionStorage.clear();
   api.pair.mockReset();
   api.authStatus.mockReset();
-  api.startGoogleAuth.mockReset();
+  api.profiles.mockReset();
+  api.saveProfile.mockReset();
+  api.sources.mockReset();
+  api.query.mockReset();
+  api.requestContext.mockReset();
+  api.serviceHealth.mockReset();
+  api.fleetOverview.mockReset();
   api.profiles.mockResolvedValue([]);
   api.sources.mockResolvedValue({ sources: [] });
+  api.query.mockResolvedValue({
+    entries: [],
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  });
   api.authStatus.mockResolvedValue({
     available: true,
-    state: "available",
     message: "Application Default Credentials are available.",
   });
   api.pair
@@ -46,31 +54,39 @@ beforeEach(() => {
   );
 });
 
-test("shows the Google sign-in action from the default fleet view when credentials are unavailable", async () => {
+test("defaults the primary view and canonical URL to Logs", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  window.history.replaceState(null, "", "/?view=unexpected");
+
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByRole("textbox", { name: "Query" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Logs" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(await screen.findByText("Connect a project")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "New connection" }));
+  expect(screen.getByRole("dialog", { name: "New connection" })).toBeVisible();
+  await waitFor(() => expect(window.location.search).toBe(""));
+});
+
+test("explains how to configure ADC when credentials are unavailable", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   api.authStatus.mockResolvedValue({
     available: false,
-    state: "needs-auth",
     message:
-      "Sign in with Google to make Application Default Credentials available.",
-  });
-  api.startGoogleAuth.mockResolvedValue({
-    authorizationUrl: "https://example.invalid/google-auth",
-    state: "pending",
-    message: "Continue signing in with Google.",
+      "Application Default Credentials are unavailable. Run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS to a service-account key file.",
   });
 
-  api.profiles.mockResolvedValue([
-    {
-      id: "test",
-      name: "Test",
-      projectId: "synthetic-project",
-      provider: "gcp",
-      status: "needs-auth",
-    },
-  ]);
   window.history.replaceState(
     null,
     "",
@@ -83,61 +99,143 @@ test("shows the Google sign-in action from the default fleet view when credentia
     </QueryClientProvider>,
   );
 
-  const button = await screen.findByRole("button", {
-    name: "Sign in with Google",
-  });
   expect(
-    screen.getByRole("button", { name: "Fleet overview" }),
-  ).toHaveAttribute("aria-pressed", "true");
-  fireEvent.click(button);
-  await waitFor(() => expect(api.startGoogleAuth).toHaveBeenCalledTimes(1));
-});
-
-test("refreshes after a Google sign-in success return without finishing in the browser", async () => {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  window.history.replaceState(
-    null,
-    "",
-    "/?auth=success#pair=single-use-pairing-token-with-enough-length",
-  );
-
-  render(
-    <QueryClientProvider client={client}>
-      <App />
-    </QueryClientProvider>,
-  );
-
-  await waitFor(() => expect(api.authStatus).toHaveBeenCalled());
-  expect(window.location.search).toBe("");
-});
-
-test("explains a Google sign-in callback failure", async () => {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  window.history.replaceState(
-    null,
-    "",
-    "/?auth=failed#pair=single-use-pairing-token-with-enough-length",
-  );
-
-  render(
-    <QueryClientProvider client={client}>
-      <App />
-    </QueryClientProvider>,
-  );
-
-  expect(
-    await screen.findByText(
-      "Google sign-in was not completed. Start sign-in again.",
-    ),
+    await screen.findByText("Application Default Credentials required"),
   ).toBeInTheDocument();
-  expect(window.location.search).toBe("");
+  expect(
+    screen.getByRole("button", { name: "Check credentials again" }),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "New connection" })).toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check credentials again" }),
+  );
+  await waitFor(() => expect(api.authStatus).toHaveBeenCalledTimes(2));
+  expect(api.sources).not.toHaveBeenCalled();
 });
 
-test("shows Google sign-in after a query authentication failure", async () => {
+test("recovers credential, profile, and source data without reloading", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  api.authStatus
+    .mockResolvedValueOnce({ available: false, message: "ADC unavailable" })
+    .mockResolvedValue({ available: true, message: "ADC available" });
+  api.profiles
+    .mockResolvedValueOnce([
+      {
+        id: "test",
+        name: "Test",
+        projectId: "synthetic-project",
+        provider: "gcp",
+        status: "needs-auth",
+      },
+    ])
+    .mockResolvedValue([
+      {
+        id: "test",
+        name: "Test",
+        projectId: "synthetic-project",
+        provider: "gcp",
+        status: "ready",
+      },
+    ]);
+
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Application Default Credentials required");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check credentials again" }),
+  );
+
+  expect(await screen.findByText("Define a query")).toBeVisible();
+  expect(api.authStatus).toHaveBeenCalledTimes(2);
+  expect(api.profiles.mock.calls.length).toBeGreaterThanOrEqual(2);
+  await waitFor(() =>
+    expect(api.sources.mock.calls.length).toBeGreaterThanOrEqual(2),
+  );
+});
+
+test("Escape closes the custom range UI without changing the selected range", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  api.profiles.mockResolvedValue([
+    {
+      id: "test",
+      name: "Test",
+      projectId: "synthetic-project",
+      provider: "gcp",
+      status: "ready",
+    },
+  ]);
+
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  await screen.findByText("Define a query");
+  const custom = await screen.findByRole("button", { name: "Custom" });
+  fireEvent.click(custom);
+  fireEvent.change(screen.getByLabelText("Custom start"), {
+    target: { value: "2026-08-01T10:00" },
+  });
+  fireEvent.change(screen.getByLabelText("Custom end"), {
+    target: { value: "2026-08-01T10:15" },
+  });
+  fireEvent.keyDown(window, { key: "Escape" });
+
+  expect(screen.queryByLabelText("Custom start")).not.toBeInTheDocument();
+  expect(custom).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+  await waitFor(() => expect(api.query).toHaveBeenCalledTimes(1));
+  expect(api.query.mock.calls[0]?.[0]).toMatchObject({
+    start: new Date("2026-08-01T10:00").toISOString(),
+    end: new Date("2026-08-01T10:15").toISOString(),
+  });
+});
+
+test("manual source Add is idempotent and selected sources can be removed", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  api.profiles.mockResolvedValue([
+    {
+      id: "test",
+      name: "Test",
+      projectId: "synthetic-project",
+      provider: "gcp",
+      status: "ready",
+    },
+  ]);
+
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  await screen.findByText("Define a query");
+  fireEvent.click(await screen.findByRole("button", { name: "All sources" }));
+  const input = screen.getByLabelText("Manual service name");
+  fireEvent.change(input, { target: { value: "manual-api" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  fireEvent.change(input, { target: { value: "manual-api" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(screen.getByRole("button", { name: "1 source" })).toBeVisible();
+  expect(screen.getAllByText("manual-api")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Remove manual-api" }));
+  expect(
+    screen.getAllByRole("button", { name: "All sources" })[0],
+  ).toBeVisible();
+});
+
+test("explains ADC after a query authentication failure", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -152,33 +250,33 @@ test("shows Google sign-in after a query authentication failure", async () => {
   ]);
   api.query.mockRejectedValue(
     new ApiError(
-      "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry.",
+      "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry.",
       424,
     ),
   );
-  api.startGoogleAuth.mockResolvedValue({
-    authorizationUrl: "https://example.invalid/google-auth",
-    state: "pending",
-    message: "Continue signing in with Google.",
-  });
-
   render(
     <QueryClientProvider client={client}>
       <App />
     </QueryClientProvider>,
   );
 
-  fireEvent.click(await screen.findByRole("button", { name: "Run query" }));
-  const button = await screen.findByRole("button", {
-    name: "Sign in with Google",
-  });
+  const run = await screen.findByRole("button", { name: "Run query" });
+  await waitFor(() => expect(run).toBeEnabled());
+  fireEvent.click(run);
   expect(
-    screen.getByText("Google Cloud authentication is unavailable or expired.", {
-      exact: false,
-    }),
+    await screen.findByText("Application Default Credentials required"),
   ).toBeVisible();
-  fireEvent.click(button);
-  await waitFor(() => expect(api.startGoogleAuth).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("button", { name: /sign in/i })).toBeNull();
+
+  await waitFor(() => expect(api.query).toHaveBeenCalledTimes(1));
+  api.query.mockResolvedValue({ entries: [] });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check credentials again" }),
+  );
+  await waitFor(() => expect(api.query).toHaveBeenCalledTimes(2));
+  expect(
+    screen.queryByText("Application Default Credentials required"),
+  ).not.toBeInTheDocument();
 });
 
 test("exchanges a single-use pairing token once in development StrictMode", async () => {

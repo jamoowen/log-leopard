@@ -52,6 +52,12 @@ export const fixtureEntries: LogEntry[] = Array.from(
         ok: severity !== "ERROR",
       },
       requestId: `req_${String(index).padStart(5, "0")}`,
+      httpRequest: {
+        method: "GET",
+        url: `https://synthetic.example.test/v1/items/${index}`,
+        status: severity === "ERROR" || severity === "CRITICAL" ? 500 : 200,
+        latency: `0.${String(12 + index).padStart(3, "0")}s`,
+      },
       ...(index % 2 === 0
         ? {
             trace: `projects/synthetic-prod-01/traces/trace-${Math.floor(index / 2)}`,

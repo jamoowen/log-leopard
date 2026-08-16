@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"github.com/jamoowen/log-leopard/internal/provider"
+	"google.golang.org/api/option"
 	monitoredres "google.golang.org/genproto/googleapis/api/monitoredres"
 	logtype "google.golang.org/genproto/googleapis/logging/type"
 	"google.golang.org/grpc/codes"
@@ -21,16 +21,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-func TestOAuthTokenPathUsesProfileConfigDirectory(t *testing.T) {
-	path, err := oauthTokenPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := filepath.Base(filepath.Dir(path)), "LogLeopard"; got != want {
-		t.Fatalf("token directory = %q, want %q", got, want)
-	}
-}
 
 func TestClassifyError(t *testing.T) {
 	tests := []struct {
@@ -52,6 +42,33 @@ func TestClassifyError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClassifyDeadlineAsUnavailable(t *testing.T) {
+	if err := classifyError(context.DeadlineExceeded); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatalf("classifyError(deadline) = %v", err)
+	}
+}
+
+func TestClientConstructionCredentialFailuresAreAuthentication(t *testing.T) {
+	credentialOptions := []option.ClientOption{option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(`{"private":"sensitive"}`))}
+	if _, err := discoverServicesWithOptions(context.Background(), "synthetic-project", credentialOptions); !errors.Is(err, provider.ErrAuthentication) || strings.Contains(err.Error(), "sensitive") {
+		t.Fatalf("discovery construction error = %v", err)
+	}
+	if _, err := queryWithOptions(context.Background(), provider.QueryRequest{ProjectID: "synthetic-project", PageSize: 1}, credentialOptions); !errors.Is(err, provider.ErrAuthentication) || strings.Contains(err.Error(), "sensitive") {
+		t.Fatalf("logging construction error = %v", err)
+	}
+}
+
+func TestDiscoverAppliesBoundedDeadline(t *testing.T) {
+	p := &Provider{discoverFn: func(ctx context.Context, _ string) ([]provider.Service, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 30*time.Second {
+			t.Fatalf("discovery deadline = %v, present = %t", deadline, ok)
+		}
+		return nil, nil
+	}}
+	p.Discover(context.Background(), "synthetic-project")
 }
 
 func TestLoggingOrderDefaultsNewestFirst(t *testing.T) {
@@ -129,7 +146,7 @@ func TestDiscoverExplainsAuthenticationFailure(t *testing.T) {
 	}}
 
 	got := p.Discover(context.Background(), "synthetic-project")
-	want := "Google Cloud authentication is unavailable or expired. Sign in with Google or verify Application Default Credentials, then retry."
+	want := "Google Cloud authentication is unavailable or expired. Refresh ADC with gcloud auth application-default login, or verify GOOGLE_APPLICATION_CREDENTIALS, then retry."
 	if got.Warning != want {
 		t.Fatalf("warning = %q, want %q", got.Warning, want)
 	}

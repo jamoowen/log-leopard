@@ -133,12 +133,7 @@ func TestLiveFleetOverview(t *testing.T) {
 }
 
 func liveProvider() *Provider {
-	clientID := os.Getenv("LOGLEOPARD_GOOGLE_OAUTH_CLIENT_ID")
-	clientSecret := os.Getenv("LOGLEOPARD_GOOGLE_OAUTH_CLIENT_SECRET")
-	if clientID == "" || clientSecret == "" {
-		return New()
-	}
-	return New(Config{ClientID: clientID, ClientSecret: clientSecret})
+	return New()
 }
 
 func errorCategory(err error) string {

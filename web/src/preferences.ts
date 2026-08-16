@@ -28,6 +28,7 @@ const predicateOperators = new Set<FieldPredicate["operator"]>([
 ]);
 const safePath = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const blockedPathParts = new Set(["__proto__", "prototype", "constructor"]);
+const cloudRunServiceName = /^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$/;
 let fallbackDraftId = 0;
 
 export type PollInterval = 0 | 5 | 10 | 30;
@@ -77,7 +78,7 @@ export const defaults: Preferences = {
   preset: "15m",
   queryMode: "leopard",
   drafts: {
-    leopard: "service:payments severity:error",
+    leopard: "",
     structured: "",
     native: "severity >= ERROR",
   },
@@ -126,9 +127,14 @@ function stringArray(
 }
 
 function isSafePath(value: string): boolean {
+  const normalized = value.startsWith("jsonPayload.")
+    ? value.slice("jsonPayload.".length)
+    : value;
   return (
     safePath.test(value) &&
-    value.split(".").every((part) => !blockedPathParts.has(part))
+    new TextEncoder().encode(normalized).length <= 256 &&
+    normalized.split(".").length <= 20 &&
+    normalized.split(".").every((part) => !blockedPathParts.has(part))
   );
 }
 
@@ -178,6 +184,7 @@ function sanitizePredicateDrafts(value: unknown): PredicateDraft[] {
         typeof item.path !== "string" ||
         (item.path !== "" && !isSafePath(item.path)) ||
         typeof item.value !== "string" ||
+        new TextEncoder().encode(item.value).length > 2050 ||
         !predicateOperators.has(item.operator as FieldPredicate["operator"])
       )
         return [];
@@ -213,8 +220,11 @@ function sanitizePredicates(value: unknown): FieldPredicate[] {
           : operator === "gt" || operator === "lt"
             ? typeof item.value === "number" && Number.isFinite(item.value)
             : operator === "contains"
-              ? typeof item.value === "string"
-              : typeof item.value === "string" ||
+              ? typeof item.value === "string" &&
+                item.value.length > 0 &&
+                new TextEncoder().encode(item.value).length <= 2048
+              : (typeof item.value === "string" &&
+                  new TextEncoder().encode(item.value).length <= 2048) ||
                 typeof item.value === "boolean" ||
                 (typeof item.value === "number" && Number.isFinite(item.value));
       return validValue
@@ -254,7 +264,9 @@ export function loadPreferences(storage: Storage = localStorage): Preferences {
         typeof stored.profileId === "string"
           ? stored.profileId
           : defaults.profileId,
-      sources: stringArray(stored.sources, 100, Boolean),
+      sources: stringArray(stored.sources, 100, (source) =>
+        cloudRunServiceName.test(source),
+      ),
       severities: severityArray(stored.severities),
       preset:
         typeof stored.preset === "string" && presets.has(stored.preset)
@@ -407,7 +419,9 @@ export function loadSavedQueries(
             id: item.id,
             name: item.name,
             profileId: item.profileId,
-            sources: stringArray(item.sources, 100, Boolean),
+            sources: stringArray(item.sources, 100, (source) =>
+              cloudRunServiceName.test(source),
+            ),
             preset:
               typeof item.preset === "string" && presets.has(item.preset)
                 ? item.preset

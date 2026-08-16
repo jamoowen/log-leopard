@@ -1,4 +1,5 @@
 import {
+  predicateToDraft,
   toPredicate,
   validateCustomRange,
   validatePredicate,
@@ -58,5 +59,33 @@ describe("structured predicates", () => {
     expect(
       toPredicate(draft({ path: "jsonPayload.level", value: '"INFO"' })),
     ).toMatchObject({ path: "level", value: "INFO" });
+  });
+  it.each(["00123", "true", "false"])(
+    "preserves the string value %s through a recipe round trip",
+    (value) => {
+      const restored = predicateToDraft(
+        { path: "request.id", operator: "equals", value },
+        "restored",
+      );
+      expect(toPredicate(restored)?.value).toBe(value);
+    },
+  );
+  it("mirrors backend path and string value limits", () => {
+    expect(
+      validatePredicate(
+        draft({ path: Array.from({ length: 21 }, () => "x").join(".") }),
+      ),
+    ).toContain("20");
+    expect(validatePredicate(draft({ path: "x".repeat(257) }))).toContain(
+      "256",
+    );
+    expect(
+      validatePredicate(draft({ value: `"${"x".repeat(2049)}"` })),
+    ).toContain("2048");
+    expect(
+      validatePredicate(
+        draft({ operator: "contains", value: "x".repeat(2049) }),
+      ),
+    ).toContain("2048");
   });
 });

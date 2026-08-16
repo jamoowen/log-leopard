@@ -36,7 +36,7 @@ func validateHealthRequest(req provider.ServiceHealthRequest) error {
 }
 
 func (p *Provider) queryServiceHealth(ctx context.Context, req provider.ServiceHealthRequest) (provider.ServiceHealthResult, error) {
-	return queryServiceHealthWithOptions(ctx, req, p.clientOptions(ctx))
+	return queryServiceHealthWithOptions(ctx, req, nil)
 }
 
 func queryServiceHealthWithOptions(ctx context.Context, req provider.ServiceHealthRequest, options []option.ClientOption) (provider.ServiceHealthResult, error) {
@@ -45,7 +45,7 @@ func queryServiceHealthWithOptions(ctx context.Context, req provider.ServiceHeal
 	options = append(options, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
 	client, err := monitoring.NewMetricClient(ctx, options...)
 	if err != nil {
-		return provider.ServiceHealthResult{}, fmt.Errorf("create monitoring client: %w", classifyError(err))
+		return provider.ServiceHealthResult{}, fmt.Errorf("create monitoring client: %w", classifyClientConstructionError(err))
 	}
 	defer func() { _ = client.Close() }()
 
