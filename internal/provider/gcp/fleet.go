@@ -38,7 +38,7 @@ func validateFleetOverviewRequest(req provider.FleetOverviewRequest) error {
 }
 
 func (p *Provider) queryFleetOverview(ctx context.Context, req provider.FleetOverviewRequest) (provider.FleetOverviewResult, error) {
-	return queryFleetOverviewWithOptions(ctx, req, p.clientOptions(ctx))
+	return queryFleetOverviewWithOptions(ctx, req, nil)
 }
 
 func queryFleetOverviewWithOptions(ctx context.Context, req provider.FleetOverviewRequest, options []option.ClientOption) (provider.FleetOverviewResult, error) {
@@ -47,7 +47,7 @@ func queryFleetOverviewWithOptions(ctx context.Context, req provider.FleetOvervi
 	options = append(options, option.WithScopes("https://www.googleapis.com/auth/monitoring.read"))
 	client, err := monitoring.NewMetricClient(ctx, options...)
 	if err != nil {
-		return provider.FleetOverviewResult{}, fmt.Errorf("create monitoring client: %w", classifyError(err))
+		return provider.FleetOverviewResult{}, fmt.Errorf("create monitoring client: %w", classifyClientConstructionError(err))
 	}
 	defer func() { _ = client.Close() }()
 

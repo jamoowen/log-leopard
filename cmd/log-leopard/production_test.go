@@ -19,7 +19,6 @@ func TestProductionServerServesEmbeddedApplication(t *testing.T) {
 	sessions, _ := auth.NewManager(time.Minute, time.Hour)
 	app, err := newServer(
 		"127.0.0.1:8787",
-		"",
 		filepath.Join(t.TempDir(), "connections.json"),
 		fake.New(),
 		sessions,

@@ -14,10 +14,12 @@ import (
 const (
 	MaxWindow     = 7 * 24 * time.Hour
 	MaxPredicates = 50
+	// MaxFilterBytes leaves headroom below Cloud Logging's 20,000-character filter limit.
+	MaxFilterBytes = 19_000
 )
 
 type FieldPredicate struct {
-	Path     string `json:"path" maxLength:"256" doc:"Dot-separated structured payload path, optionally prefixed with jsonPayload. Each segment must start with a letter or underscore and contain only letters, digits, and underscores."`
+	Path     string `json:"path" maxLength:"268" doc:"Dot-separated structured payload path, optionally prefixed with jsonPayload. The normalized path may contain up to 256 characters. Each segment must start with a letter or underscore and contain only letters, digits, and underscores."`
 	Operator string `json:"operator" enum:"equals,contains,exists,gt,lt" doc:"Exact structured-field comparison operator."`
 	Value    any    `json:"value" doc:"Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt."`
 }
@@ -47,9 +49,10 @@ func Compile(in CompileInput) (string, error) {
 	if len(in.Sources) > 0 {
 		choices := make([]string, 0, len(in.Sources))
 		for _, source := range in.Sources {
-			if source != "" {
-				choices = append(choices, `resource.labels.service_name = `+quote(source))
+			if !cloudRunServiceNamePattern.MatchString(source) {
+				return "", errors.New("source must be a valid Cloud Run service name containing 1 to 49 lowercase letters, digits, or hyphens")
 			}
+			choices = append(choices, `resource.labels.service_name = `+quote(source))
 		}
 		if len(choices) > 0 {
 			fragments = append(fragments, "("+strings.Join(choices, " OR ")+")")
@@ -103,10 +106,15 @@ func Compile(in CompileInput) (string, error) {
 	for i := range fragments {
 		fragments[i] = "(" + fragments[i] + ")"
 	}
-	return strings.Join(fragments, " AND "), nil
+	filter := strings.Join(fragments, " AND ")
+	if len(filter) > MaxFilterBytes {
+		return "", fmt.Errorf("compiled filter exceeds the %d-byte limit; shorten the query or select fewer filters", MaxFilterBytes)
+	}
+	return filter, nil
 }
 
 var pathSegmentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var cloudRunServiceNamePattern = regexp.MustCompile(`^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$`)
 
 func compilePredicate(predicate FieldPredicate) (string, error) {
 	path := strings.TrimSpace(predicate.Path)
@@ -181,6 +189,18 @@ func scalar(value any) (string, error) {
 }
 
 func CompileRequestContext(event time.Time, requestID, traceID string) (string, error) {
+	return compileRequestContext(event, requestID, traceID, event.Add(-15*time.Minute), event.Add(15*time.Minute), "<=")
+}
+
+func CompileRequestContextBefore(event time.Time, requestID, traceID string) (string, error) {
+	return compileRequestContext(event, requestID, traceID, event.Add(-15*time.Minute), event, "<")
+}
+
+func CompileRequestContextAfter(event time.Time, requestID, traceID string) (string, error) {
+	return compileRequestContext(event, requestID, traceID, event, event.Add(15*time.Minute), "<=")
+}
+
+func compileRequestContext(event time.Time, requestID, traceID string, start, end time.Time, endOperator string) (string, error) {
 	if event.IsZero() {
 		return "", errors.New("eventTimestamp is required")
 	}
@@ -206,14 +226,18 @@ func CompileRequestContext(event time.Time, requestID, traceID string) (string, 
 	}
 	fragments := []string{
 		`resource.type = "cloud_run_revision"`,
-		"timestamp >= " + quote(event.Add(-15*time.Minute).UTC().Format(time.RFC3339Nano)),
-		"timestamp <= " + quote(event.Add(15*time.Minute).UTC().Format(time.RFC3339Nano)),
+		"timestamp >= " + quote(start.UTC().Format(time.RFC3339Nano)),
+		"timestamp " + endOperator + " " + quote(end.UTC().Format(time.RFC3339Nano)),
 		"(" + strings.Join(identifiers, " OR ") + ")",
 	}
 	for i := range fragments {
 		fragments[i] = "(" + fragments[i] + ")"
 	}
-	return strings.Join(fragments, " AND "), nil
+	filter := strings.Join(fragments, " AND ")
+	if len(filter) > MaxFilterBytes {
+		return "", fmt.Errorf("compiled filter exceeds the %d-byte limit; shorten the query or select fewer filters", MaxFilterBytes)
+	}
+	return filter, nil
 }
 
 func validateNativeFilter(filter string) error {
@@ -319,7 +343,7 @@ func (t token) compile() (string, error) {
 	value := t.value
 	if t.quoted {
 		q := quote(value)
-		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`, nil
+		return compileTextSearch(q), nil
 	}
 	negated := strings.HasPrefix(value, "-")
 	if negated {
@@ -338,7 +362,7 @@ func (t token) compile() (string, error) {
 	var result string
 	if !hasField {
 		q := quote(value)
-		result = `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`
+		result = compileTextSearch(q)
 	} else {
 		compiled, err := compileField(field, val)
 		if err != nil {
@@ -356,7 +380,7 @@ func compileField(field, value string) (string, error) {
 	q := quote(value)
 	switch strings.ToLower(field) {
 	case "message", "msg":
-		return `(jsonPayload.message:` + q + ` OR jsonPayload.msg:` + q + ` OR textPayload:` + q + `)`, nil
+		return compileTextSearch(q), nil
 	case "service", "source":
 		return `(resource.labels.service_name = ` + q + ` OR jsonPayload.service = ` + q + ` OR jsonPayload.service_name = ` + q + ` OR jsonPayload.service.name = ` + q + `)`, nil
 	case "severity", "level":
@@ -380,6 +404,10 @@ func compileField(field, value string) (string, error) {
 	return "jsonPayload." + field + ` = ` + q, nil
 }
 
+func compileTextSearch(quotedValue string) string {
+	return `(jsonPayload.message:` + quotedValue + ` OR jsonPayload.msg:` + quotedValue + ` OR jsonPayload.error.message:` + quotedValue + ` OR jsonPayload.exception.message:` + quotedValue + ` OR textPayload:` + quotedValue + `)`
+}
+
 func canonicalSeverity(value string) (string, bool) {
 	severity := strings.ToUpper(strings.TrimSpace(value))
 	if severity == "WARN" {
@@ -395,22 +423,16 @@ func compileSeverity(severity string) string {
 	if severity == "DEFAULT" {
 		nonDefaultLevels := make([]string, 0)
 		for _, candidate := range severityOrder[1:] {
-			for _, level := range jsonLevels(candidate) {
-				nonDefaultLevels = append(nonDefaultLevels, `jsonPayload.level = `+quote(level))
-			}
+			nonDefaultLevels = append(nonDefaultLevels, jsonLevelMatcher(candidate))
 		}
 		return `(severity = "DEFAULT" AND NOT (` + strings.Join(nonDefaultLevels, " OR ") + `))`
 	}
 	choices := []string{`severity = ` + quote(severity)}
-	fallbacks := make([]string, 0, len(jsonLevels(severity)))
-	for _, level := range jsonLevels(severity) {
-		fallbacks = append(fallbacks, `jsonPayload.level = `+quote(level))
-	}
-	choices = append(choices, `(severity = "DEFAULT" AND (`+strings.Join(fallbacks, " OR ")+`))`)
+	choices = append(choices, `(severity = "DEFAULT" AND (`+jsonLevelMatcher(severity)+`))`)
 	return "(" + strings.Join(choices, " OR ") + ")"
 }
 
-func jsonLevels(severity string) []string {
+func jsonLevelMatcher(severity string) string {
 	values := []string{severity}
 	switch severity {
 	case "DEBUG":
@@ -420,11 +442,12 @@ func jsonLevels(severity string) []string {
 	case "CRITICAL":
 		values = append(values, "FATAL", "PANIC")
 	}
-	levels := make([]string, 0, len(values)*2)
-	for _, value := range values {
-		levels = append(levels, value, strings.ToLower(value))
+	pattern := values[0]
+	if len(values) > 1 {
+		pattern = "(?:" + strings.Join(values, "|") + ")"
 	}
-	return levels
+	// Cloud Logging's =~ operator uses RE2, whose inline (?i) flag provides exact case-insensitive matching.
+	return `jsonPayload.level =~ ` + quote(`(?i)^`+pattern+`$`)
 }
 
 func quote(value string) string { return strconv.Quote(value) }

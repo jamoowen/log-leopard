@@ -46,7 +46,6 @@ func run() error {
 	open := flag.Bool("open", false, "open the pairing URL in the default browser")
 	browser := flag.String("browser", "default", "browser used with -open: default, brave, chrome, firefox, or safari")
 	browserURL := flag.String("browser-url", "", "loopback URL hosting the browser UI (defaults to the backend)")
-	googleOAuthClientID := flag.String("google-oauth-client-id", envOr("LOGLEOPARD_GOOGLE_OAUTH_CLIENT_ID", ""), "Google OAuth desktop client ID (required with client secret)")
 	openAPIPath := flag.String("write-openapi", "", "write OpenAPI JSON and exit")
 	showVersion := flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
@@ -67,13 +66,13 @@ func run() error {
 	}
 	sessions, pairingToken := auth.NewManager(10*time.Minute, 12*time.Hour)
 	cursors := cursor.New(15 * time.Minute)
-	var backend cloudProvider = gcp.New(gcp.Config{ClientID: *googleOAuthClientID, ClientSecret: envOr("LOGLEOPARD_GOOGLE_OAUTH_CLIENT_SECRET", "")})
+	var backend cloudProvider = gcp.New()
 	if *fakeMode {
 		backend = fake.New()
 	}
 
 	if *openAPIPath != "" {
-		app, err := newServer("127.0.0.1:1", "", path, backend, sessions, cursors)
+		app, err := newServer("127.0.0.1:1", path, backend, sessions, cursors)
 		if err != nil {
 			return err
 		}
@@ -94,7 +93,7 @@ func run() error {
 	}
 	defer func() { _ = listener.Close() }()
 	host := listener.Addr().String()
-	app, err := newServer(host, *browserURL, path, backend, sessions, cursors)
+	app, err := newServer(host, path, backend, sessions, cursors)
 	if err != nil {
 		return err
 	}
@@ -135,13 +134,6 @@ func run() error {
 		}
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
-}
-
-func envOr(name, fallback string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func versionString() string {
@@ -217,11 +209,10 @@ type cloudProvider interface {
 	server.HealthProvider
 }
 
-func newServer(host, browserURL, path string, backend cloudProvider, sessions *auth.Manager, cursors *cursor.Signer) (*server.Server, error) {
+func newServer(host, path string, backend cloudProvider, sessions *auth.Manager, cursors *cursor.Signer) (*server.Server, error) {
 	return server.New(server.Config{
 		Host:           host,
 		Origin:         "http://" + host,
-		BrowserURL:     browserURL,
 		Profiles:       profile.NewStore(path),
 		Provider:       backend,
 		HealthProvider: backend,

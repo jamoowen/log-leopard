@@ -171,7 +171,7 @@ test("explains when Google Cloud authentication is required", () => {
   expect(
     screen.getByText("Google Cloud authentication required"),
   ).toBeVisible();
-  expect(screen.getByText(/Sign in with Google/)).toBeVisible();
+  expect(screen.getByText(/Refresh ADC with gcloud/)).toBeVisible();
   expect(
     screen.queryByText("No Cloud Run services were discovered."),
   ).toBeNull();

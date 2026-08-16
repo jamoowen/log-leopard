@@ -32,13 +32,13 @@ Production builds embed `web/dist` in the Go binary. Development Go builds use a
 
 Until the first package is published, build from source using the requirements below. Tagged releases provide self-contained archives for macOS, Linux, and Windows from the [GitHub Releases page](https://github.com/jamoowen/log-leopard/releases); the executable contains the web UI and needs no Node.js runtime. Release binaries are not currently code-signed or notarized.
 
-After extracting an archive, configure in-app Google sign-in or ADC as described below and run `./log-leopard` (`log-leopard.exe` on Windows). Use `./log-leopard -version` to identify a packaged build. Verify downloaded archives against the attached `SHA256SUMS` before running them.
+After extracting an archive, configure Application Default Credentials (ADC) as described below and run `./log-leopard` (`log-leopard.exe` on Windows). Use `./log-leopard -version` to identify a packaged build. Verify downloaded archives against the attached `SHA256SUMS` before running them.
 
 ## Requirements
 
 - Go 1.26.5 or newer in the 1.26 release line
 - Node.js 22.12+ and pnpm 11.8.0
-- Google Cloud CLI only when using an ADC CLI workflow
+- Google Cloud CLI for the standard ADC workflow
 - `golangci-lint` v2.10.1 for the complete local quality gate
 
 Install frontend dependencies once:
@@ -49,24 +49,7 @@ pnpm --dir web install --frozen-lockfile
 
 ## GCP access
 
-LogLeopard can use its in-app **Sign in with Google** flow or Application Default Credentials (ADC). For in-app sign-in, create a Google OAuth **Desktop** client in your Google Cloud project and supply both its client ID and client secret when starting LogLeopard.
-
-For `make` workflows, put both values in the ignored root `.env` file as simple `KEY=value` lines:
-
-```sh
-LOGLEOPARD_GOOGLE_OAUTH_CLIENT_ID=YOUR_CLIENT_ID
-LOGLEOPARD_GOOGLE_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET
-```
-
-When running a binary directly, provide both environment variables through your shell environment or application launcher; do not put the client secret on the command line.
-
-Cloud Run service discovery requires the `https://www.googleapis.com/auth/cloud-platform` OAuth scope. LogLeopard still issues only fixed, read-only Logging, Cloud Run, and Monitoring operations, and relies on viewer IAM roles. Existing stored tokens from before this scope change will require one re-consent.
-
-For Google OAuth consent, External apps in Testing issue refresh tokens that expire after seven days. Use Internal for a Workspace-only app, or move the app In production for ongoing personal or external use. Unverified apps may show warning screens and have user limits.
-
-The OAuth callback is a numeric-loopback URL owned by the local backend. Access and refresh tokens never enter the browser; LogLeopard stores the refresh token and granted-scope metadata locally in its OS configuration directory. Unix-like systems use owner-only file permissions; Windows relies on the current user's profile/config-directory ACLs. This storage is file-backed today and may move to Keychain/credential-manager storage in a future release.
-
-ADC remains available as a fallback and supports user credentials, service-account impersonation, and service-account key files referenced through `GOOGLE_APPLICATION_CREDENTIALS`. LogLeopard does not accept key uploads through the browser or copy private keys into its own configuration. To use an ADC CLI workflow, run:
+LogLeopard uses Application Default Credentials (ADC). ADC supports user credentials, service-account impersonation, and service-account key files referenced through `GOOGLE_APPLICATION_CREDENTIALS`. LogLeopard does not accept key uploads through the browser, persist credentials, or copy private keys into its configuration. For the standard local workflow, run:
 
 ```sh
 gcloud auth application-default login
@@ -80,11 +63,11 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/read-only-service-account.json make dev
 
 Prefer impersonation where possible because service-account keys are long-lived credentials that must be separately protected, rotated, and revoked.
 
-Grant the authenticated principal these minimum project-level roles on every project it will query:
+Grant the authenticated principal these project-level roles according to the features it will use:
 
 - `roles/logging.viewer` to discover and read log entries.
 - `roles/run.viewer` to discover Cloud Run services.
-- `roles/monitoring.viewer` to read the built-in service-health metrics.
+- `roles/monitoring.viewer` only to use the optional Fleet Overview and Service Health views.
 
 Organization policies or custom roles can require additional permissions. If ADC warns about quota, set a quota project with `gcloud auth application-default set-quota-project PROJECT_ID`; that may require `serviceusage.services.use`, included in `roles/serviceusage.serviceUsageConsumer`, on the quota project.
 
@@ -102,15 +85,17 @@ Impersonation avoids long-lived service-account keys. The impersonated account s
 For the packaged-style app, the backend prints a loopback pairing URL to copy into any browser. These commands run the embedded production UI without a separate frontend process:
 
 ```sh
-make run                          # live GCP through in-app OAuth or ADC
+make run                          # live GCP through ADC
 make run-fake                     # synthetic data, no GCP access
 go run -tags production ./cmd/log-leopard -open  # open after make web-build
 ```
 
+The backend fake evaluates the core Leopard time, service, severity, and message filters. It rejects Native GCP and Structured Builder filters rather than returning misleading unfiltered entries; use the browser mock or live GCP when developing those advanced modes.
+
 For frontend development, one command builds and supervises the backend and Vite, waits for both, prints the correctly paired Vite URL, and stops both processes on exit:
 
 ```sh
-make dev       # live GCP through in-app OAuth or ADC
+make dev       # live GCP through ADC
 make dev-fake  # synthetic data, no GCP access
 make dev BROWSER=brave  # open the pairing URL in Brave
 ```
@@ -125,7 +110,7 @@ Connection profiles store a display name and GCP project ID, never credentials.
 
 ## Query language
 
-Queries require absolute `start` and `end` timestamps and are limited to seven days. Page sizes are 1 to 200, normalized responses are capped at 4 MiB, and opaque short-lived cursors are bound to the connection, compiled filter, time window, and page size.
+Queries require absolute `start` and `end` timestamps and are limited to seven days. Page sizes are 1 to 200, normalized responses are capped at 4 MiB, and opaque short-lived cursors are bound to the connection, compiled filter, time window, and page size. Cursor expiry is returned only when another page is available.
 
 The search syntax supports:
 
@@ -152,6 +137,7 @@ Message normalization checks common JSON message fields before `textPayload` and
 
 ## Daily-use workflow
 
+- The app opens directly in Logs with an empty Leopard query, all Cloud Run services, and a 15-minute window; Fleet Overview and Service Health remain available as optional investigation views.
 - Compact, structured, and raw result modes share a virtualized message-led grid and detailed entry inspector.
 - The structured builder creates validated `jsonPayload` predicates without requiring GCP filter syntax.
 - Loaded structured payloads feed a bounded field browser. Fields can be promoted into filters or pinned into compact rows per connection.

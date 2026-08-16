@@ -5,7 +5,12 @@ import App from "./App";
 import "./styles.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, staleTime: 10_000 } },
+  defaultOptions: {
+    queries: {
+      retry: false,
+      staleTime: 10_000,
+    },
+  },
 });
 
 createRoot(document.getElementById("root")!).render(

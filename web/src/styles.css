@@ -306,6 +306,15 @@ kbd {
 .check-row input {
   accent-color: var(--accent);
 }
+.manual-source-row button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+.manual-source-row button:hover {
+  color: var(--error);
+}
 .manual-source {
   border-top: 1px solid var(--border);
   display: flex;
@@ -893,6 +902,7 @@ kbd {
   padding: 0 12px 0 16px;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
+  user-select: text;
 }
 .log-row:hover,
 .log-row.selected {
@@ -1045,6 +1055,19 @@ kbd {
   position: sticky;
   bottom: 12px;
   margin: 12px auto;
+  box-shadow: var(--shadow);
+}
+.result-limit-note {
+  position: sticky;
+  bottom: 12px;
+  width: fit-content;
+  margin: 12px auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
   box-shadow: var(--shadow);
 }
 

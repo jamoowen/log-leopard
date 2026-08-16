@@ -29,15 +29,6 @@ export const mockClient: ApiClient = {
     await pause(30);
     return {
       available: true,
-      state: "available",
-      message: "Synthetic credentials are available.",
-    };
-  },
-  async startGoogleAuth() {
-    await pause(30);
-    return {
-      authorizationUrl: "https://example.invalid/google-auth",
-      state: "available",
       message: "Synthetic credentials are available.",
     };
   },
@@ -119,8 +110,12 @@ export const mockClient: ApiClient = {
     const next = offset + entries.length;
     return {
       entries,
-      ...(next < filtered.length ? { nextCursor: String(next) } : {}),
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      ...(next < filtered.length
+        ? {
+            nextCursor: String(next),
+            expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          }
+        : {}),
     };
   },
   async requestContext(input, signal) {

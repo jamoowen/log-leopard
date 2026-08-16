@@ -4,26 +4,6 @@
  */
 
 export interface paths {
-    "/api/v1/auth/google/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start Google sign-in
-         * @description Start a backend-owned Google OAuth installed-app flow.
-         */
-        post: operations["auth-google-start"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/status": {
         parameters: {
             query?: never;
@@ -236,23 +216,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AuthStartOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/AuthStartOutputBody.json
-             */
-            readonly $schema?: string;
-            /** @description Google authorization URL. Contains no LogLeopard credentials. */
-            authorizationUrl?: string;
-            /** @description Sanitized credential status message. */
-            message: string;
-            /**
-             * @description Sanitized local Google credential state.
-             * @enum {string}
-             */
-            state: "unconfigured" | "available" | "needs-auth" | "pending" | "failed";
-        };
         AuthStatusOutputBody: {
             /**
              * Format: uri
@@ -260,15 +223,10 @@ export interface components {
              * @example https://example.com/AuthStatusOutputBody.json
              */
             readonly $schema?: string;
-            /** @description Whether backend Google credentials or Application Default Credentials are available. */
+            /** @description Whether Application Default Credentials are available. */
             available: boolean;
-            /** @description Sanitized credential status message. */
+            /** @description Sanitized Application Default Credential status message. */
             message: string;
-            /**
-             * @description Sanitized local Google credential state.
-             * @enum {string}
-             */
-            state: "unconfigured" | "available" | "needs-auth" | "pending" | "failed";
         };
         CookieOutputBody: {
             /**
@@ -377,7 +335,7 @@ export interface components {
              * @enum {string}
              */
             operator: "equals" | "contains" | "exists" | "gt" | "lt";
-            /** @description Dot-separated structured payload path, optionally prefixed with jsonPayload. Each segment must start with a letter or underscore and contain only letters, digits, and underscores. */
+            /** @description Dot-separated structured payload path, optionally prefixed with jsonPayload. The normalized path may contain up to 256 characters. Each segment must start with a letter or underscore and contain only letters, digits, and underscores. */
             path: string;
             /** @description Comparison value: string, number, or boolean for equals; string for contains; boolean for exists; number for gt or lt. */
             value: unknown;
@@ -596,9 +554,9 @@ export interface components {
             entries: components["schemas"]["Entry"][] | null;
             /**
              * Format: date-time
-             * @description Cursor expiry timestamp.
+             * @description Cursor expiry timestamp, present only when nextCursor is present.
              */
-            expiresAt: string;
+            expiresAt?: string;
             /** @description Opaque cursor for the next page. */
             nextCursor?: string;
         };
@@ -700,35 +658,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "auth-google-start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthStartOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
     "auth-status": {
         parameters: {
             query?: never;

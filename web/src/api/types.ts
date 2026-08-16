@@ -39,7 +39,6 @@ export type FleetOverviewSummary =
   components["schemas"]["FleetOverviewSummary"];
 export type PairResponse = components["schemas"]["CookieOutputBody"];
 export type AuthStatus = components["schemas"]["AuthStatusOutputBody"];
-export type AuthStart = components["schemas"]["AuthStartOutputBody"];
 export type Problem = components["schemas"]["ErrorModel"];
 
 export type LogEntry = components["schemas"]["Entry"];
@@ -63,7 +62,6 @@ export type Severity =
 export interface ApiClient {
   pair(token: string): Promise<PairResponse>;
   authStatus(): Promise<AuthStatus>;
-  startGoogleAuth(): Promise<AuthStart>;
   profiles(): Promise<ProfileListResponse>;
   saveProfile(input: ProfileInput, id?: string): Promise<Profile>;
   sources(profileId: string): Promise<SourceDiscovery>;

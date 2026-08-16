@@ -10,6 +10,13 @@ export interface PredicateDraft {
 
 const pathPattern = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const blockedPathParts = new Set(["__proto__", "prototype", "constructor"]);
+const maxPathLength = 256;
+const maxPathSegments = 20;
+const maxStringValueLength = 2048;
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
 
 export function normalizePredicatePath(value: string) {
   const path = value.trim();
@@ -20,6 +27,10 @@ export function normalizePredicatePath(value: string) {
 
 export function validatePredicate(draft: PredicateDraft): string | null {
   const path = normalizePredicatePath(draft.path);
+  if (byteLength(path) > maxPathLength)
+    return "Path cannot exceed 256 characters.";
+  if (path.split(".").length > maxPathSegments)
+    return "Path cannot contain more than 20 segments.";
   if (
     !pathPattern.test(path) ||
     path.split(".").some((part) => blockedPathParts.has(part))
@@ -34,10 +45,17 @@ export function validatePredicate(draft: PredicateDraft): string | null {
       ? null
       : "Enter a number.";
   if (draft.operator === "contains")
-    return draft.value.length > 0 ? null : "Enter text to match.";
-  return parseEquals(draft.value).valid
-    ? null
-    : "Enter text, a number, true, or false.";
+    return draft.value.length === 0
+      ? "Enter text to match."
+      : byteLength(draft.value) > maxStringValueLength
+        ? "Text cannot exceed 2048 characters."
+        : null;
+  const parsed = parseEquals(draft.value);
+  if (!parsed.valid) return "Enter text, a number, true, or false.";
+  return typeof parsed.value === "string" &&
+    byteLength(parsed.value) > maxStringValueLength
+    ? "Text cannot exceed 2048 characters."
+    : null;
 }
 
 function parseEquals(value: string): {
@@ -92,13 +110,16 @@ export function toPredicate(draft: PredicateDraft): FieldPredicate | null {
 
 export function predicateToDraft(
   predicate: FieldPredicate,
-  id = crypto.randomUUID(),
+  id: string = crypto.randomUUID(),
 ): PredicateDraft {
   return {
     id,
     path: predicate.path,
     operator: predicate.operator,
-    value: String(predicate.value),
+    value:
+      predicate.operator === "equals" && typeof predicate.value === "string"
+        ? JSON.stringify(predicate.value)
+        : String(predicate.value),
   };
 }
 

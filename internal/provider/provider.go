@@ -34,33 +34,6 @@ type DiscoveryWarningCode string
 
 const DiscoveryWarningAuthentication DiscoveryWarningCode = "authentication"
 
-type AuthState string
-
-const (
-	AuthUnconfigured AuthState = "unconfigured"
-	AuthAvailable    AuthState = "available"
-	AuthNeedsAuth    AuthState = "needs-auth"
-	AuthPending      AuthState = "pending"
-	AuthFailed       AuthState = "failed"
-)
-
-type AuthStatus struct {
-	State   AuthState
-	Message string
-}
-
-type AuthStart struct {
-	AuthStatus
-	AuthorizationURL string
-}
-
-type GoogleAuthCallback struct {
-	RedirectURI string
-	State       string
-	Code        string
-	Error       string
-}
-
 type Discovery struct {
 	Services    []Service            `json:"services"`
 	Warning     string               `json:"warning,omitempty"`

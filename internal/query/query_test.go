@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,24 @@ func TestCompileRequestContextUsesOnlyKnownExactLocations(t *testing.T) {
 	}
 }
 
+func TestCompileRequestContextHalvesSplitAtSelectedEvent(t *testing.T) {
+	event := time.Date(2026, 3, 4, 12, 30, 0, 0, time.UTC)
+	before, err := CompileRequestContextBefore(event, "request-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := CompileRequestContextAfter(event, "request-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(before, `timestamp >= "2026-03-04T12:15:00Z"`) || !strings.Contains(before, `timestamp < "2026-03-04T12:30:00Z"`) {
+		t.Fatalf("before filter = %s", before)
+	}
+	if !strings.Contains(after, `timestamp >= "2026-03-04T12:30:00Z"`) || !strings.Contains(after, `timestamp <= "2026-03-04T12:45:00Z"`) {
+		t.Fatalf("after filter = %s", after)
+	}
+}
+
 func TestCompileRequestContextRequiresKnownIdentifier(t *testing.T) {
 	now := time.Now()
 	for _, tc := range []struct {
@@ -132,8 +151,8 @@ func TestCompileSyntaxAndEscaping(t *testing.T) {
 	for _, want := range []string{
 		`(resource.type = "cloud_run_revision")`,
 		`(timestamp >= "2026-01-02T03:04:05Z")`, `resource.labels.service_name = "api"`,
-		`severity = "WARNING"`, `jsonPayload.level = "WARN"`, `jsonPayload.http.method = "POST"`,
-		`severity = "ERROR"`, `jsonPayload.level = "ERROR"`,
+		`severity = "WARNING"`, `jsonPayload.level =~ "(?i)^(?:WARNING|WARN)$"`, `jsonPayload.http.method = "POST"`,
+		`severity = "ERROR"`, `jsonPayload.level =~ "(?i)^ERROR$"`,
 		`(labels.environment="test" OR labels.environment="dev")`,
 	} {
 		if !strings.Contains(filter, want) {
@@ -179,7 +198,7 @@ func TestTextQueriesUseOnlyScalarPayloadFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"jsonPayload.message", "jsonPayload.msg", "textPayload"} {
+	for _, field := range []string{"jsonPayload.message", "jsonPayload.msg", "jsonPayload.error.message", "jsonPayload.exception.message", "textPayload"} {
 		if !strings.Contains(filter, field) {
 			t.Fatalf("text filter missing %s: %s", field, filter)
 		}
@@ -189,16 +208,39 @@ func TestTextQueriesUseOnlyScalarPayloadFields(t *testing.T) {
 	}
 }
 
+func TestCompileRejectsInvalidCloudRunSourceNames(t *testing.T) {
+	now := time.Now()
+	for _, source := range []string{"", "Uppercase", "-api", "api-", strings.Repeat("a", 50)} {
+		if _, err := Compile(CompileInput{Sources: []string{source}, Start: now, End: now.Add(time.Hour)}); err == nil || !strings.Contains(err.Error(), "Cloud Run service name") {
+			t.Errorf("source %q error = %v", source, err)
+		}
+	}
+	if _, err := Compile(CompileInput{Sources: []string{strings.Repeat("a", 49)}, Start: now, End: now.Add(time.Hour)}); err != nil {
+		t.Fatalf("valid 49-character source rejected: %v", err)
+	}
+}
+
+func TestCompileRejectsFilterOverConservativeCloudLimit(t *testing.T) {
+	now := time.Now()
+	predicates := make([]FieldPredicate, 10)
+	for i := range predicates {
+		predicates[i] = FieldPredicate{Path: fmt.Sprintf("field%d", i), Operator: "equals", Value: strings.Repeat("x", 2048)}
+	}
+	if _, err := Compile(CompileInput{Predicates: predicates, Start: now, End: now.Add(time.Hour)}); err == nil || err.Error() != "compiled filter exceeds the 19000-byte limit; shorten the query or select fewer filters" {
+		t.Fatalf("overlong filter error = %v", err)
+	}
+}
+
 func TestSeverityPayloadFallbackRequiresDefaultTopLevelSeverity(t *testing.T) {
 	now := time.Now()
 	filter, err := Compile(CompileInput{Severities: []string{"error"}, Start: now, End: now.Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(filter, `(severity = "DEFAULT" AND (jsonPayload.level = "ERROR"`) {
+	if !strings.Contains(filter, `(severity = "DEFAULT" AND (jsonPayload.level =~ "(?i)^ERROR$"`) {
 		t.Fatalf("payload fallback is not gated by DEFAULT severity: %s", filter)
 	}
-	if strings.Contains(filter, ` OR jsonPayload.level = "ERROR"`) {
+	if strings.Contains(filter, ` OR jsonPayload.level =~ "(?i)^ERROR$"`) {
 		t.Fatalf("payload fallback can match conflicting top-level severity: %s", filter)
 	}
 }
@@ -209,13 +251,31 @@ func TestDefaultSeverityExcludesRecognizedPayloadLevels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, excluded := range []string{`jsonPayload.level = "ERROR"`, `jsonPayload.level = "WARN"`, `jsonPayload.level = "INFO"`} {
+	for _, excluded := range []string{`(?i)^ERROR$`, `(?i)^(?:WARNING|WARN)$`, `(?i)^INFO$`} {
 		if !strings.Contains(filter, excluded) {
 			t.Fatalf("DEFAULT filter does not exclude recognized payload level %q: %s", excluded, filter)
 		}
 	}
 	if !strings.Contains(filter, `severity = "DEFAULT" AND NOT (`) {
 		t.Fatalf("DEFAULT filter is not gated against recognized payload levels: %s", filter)
+	}
+}
+
+func TestSeverityPayloadFallbackIsCaseInsensitiveAndDefaultIsItsComplement(t *testing.T) {
+	now := time.Now()
+	errorFilter, err := Compile(CompileInput{Severities: []string{"error"}, Start: now, End: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errorFilter, `jsonPayload.level =~ "(?i)^ERROR$"`) || strings.Contains(errorFilter, `jsonPayload.level = "error"`) {
+		t.Fatalf("ERROR payload fallback is not case-insensitive: %s", errorFilter)
+	}
+	defaultFilter, err := Compile(CompileInput{Severities: []string{"default"}, Start: now, End: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(defaultFilter, `NOT (`) || !strings.Contains(defaultFilter, `jsonPayload.level =~ "(?i)^ERROR$"`) {
+		t.Fatalf("DEFAULT is not the complement of recognized mixed-case levels: %s", defaultFilter)
 	}
 }
 
@@ -243,7 +303,7 @@ func TestSourceAndSeverityChoicesStayGrouped(t *testing.T) {
 	}
 	for _, want := range []string{
 		`((resource.labels.service_name = "api" OR resource.labels.service_name = "worker"))`,
-		`severity = "WARNING"`, `jsonPayload.level = "WARN"`, `severity = "ERROR"`,
+		`severity = "WARNING"`, `jsonPayload.level =~ "(?i)^(?:WARNING|WARN)$"`, `severity = "ERROR"`,
 	} {
 		if !strings.Contains(filter, want) {
 			t.Fatalf("filter missing grouped fragment %q: %s", want, filter)
@@ -260,7 +320,7 @@ func TestAliasesSearchProviderAndStructuredLocations(t *testing.T) {
 	for _, want := range []string{
 		`resource.labels.service_name = "api"`, `jsonPayload.service = "api"`,
 		`jsonPayload.service_name = "api"`, `jsonPayload.service.name = "api"`,
-		`severity = "WARNING"`, `jsonPayload.level = "WARN"`, `jsonPayload.level = "WARNING"`,
+		`severity = "WARNING"`, `jsonPayload.level =~ "(?i)^(?:WARNING|WARN)$"`,
 	} {
 		if !strings.Contains(filter, want) {
 			t.Errorf("filter missing %q: %s", want, filter)
